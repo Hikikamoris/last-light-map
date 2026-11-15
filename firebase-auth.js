@@ -81,7 +81,9 @@ function worldDocument(world) {
   if (!squads || !map || !["lines", "zones", "labels", "pts"].every((key) => Array.isArray(map[key]))) {
     throw new Error("Не удалось подготовить отряды и карту для общей базы.");
   }
-  const data = JSON.parse(JSON.stringify({ squads, map }));
+  // Firestore doesn't allow arrays nested inside arrays (map vertices live inside feature arrays).
+  // Keep the map payload as JSON text while preserving squads as normal Firestore data.
+  const data = JSON.parse(JSON.stringify({ squads, mapJson: JSON.stringify(map) }));
   if (new Blob([JSON.stringify(data)]).size > 850000) {
     throw new Error("Общая карта слишком большая для одной записи. Уменьшите число объектов или разделите их.");
   }
@@ -205,7 +207,7 @@ const api = {
   },
   async saveWorld(world) {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Публиковать отряды и карту может только мастер.");
-    await setDoc(doc(db, "public", "world"), worldDocument(world), { merge: true });
+    await setDoc(doc(db, "public", "world"), worldDocument(world));
   },
   async initializeWorld(world) {
     if (!db || state.profile?.role !== "owner") throw new Error("Первую общую версию может опубликовать только создатель проекта.");
