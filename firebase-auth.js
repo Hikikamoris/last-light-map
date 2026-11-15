@@ -332,8 +332,8 @@ const api = {
   async createBroadcast(post) {
     if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) throw new Error("Создавать публикации может только мастер.");
     const text = String(post?.text || "").trim();
-    const senderName = String(post?.senderName || "").trim();
-    const channel = String(post?.channel || "События").trim();
+    const senderName = String(post?.senderName || "").trim().slice(0, 80);
+    const channel = String(post?.channel || "События").trim().slice(0, 40);
     const audience = post?.audience === "selected" ? "selected" : "all";
     const visibleTo = Array.isArray(post?.visibleTo) ? Array.from(new Set(post.visibleTo.map(String).filter(Boolean))).slice(0, 100) : [];
     if (!text) throw new Error("Добавьте текст публикации.");
