@@ -55,6 +55,21 @@ nav a,.tabs button{font-size:13px}.st{font-size:11px}button.pr:hover{filter:brig
 #map,#emap{background:radial-gradient(ellipse at 22% 24%,rgba(112,103,78,.42) 0,rgba(71,70,56,.22) 30%,transparent 59%),radial-gradient(ellipse at 78% 72%,rgba(92,96,76,.34) 0,rgba(54,60,51,.18) 34%,transparent 60%),radial-gradient(ellipse at 52% 44%,rgba(126,116,89,.13) 0,transparent 47%),linear-gradient(145deg,#28271f 0%,#181a17 50%,#24231c 100%)}
 #map::before,#emap::before{content:'';position:absolute;inset:-25%;background:radial-gradient(ellipse at 20% 28%,rgba(160,147,111,.18),transparent 31%),radial-gradient(ellipse at 73% 34%,rgba(95,101,79,.22),transparent 36%),radial-gradient(ellipse at 44% 72%,rgba(128,117,89,.16),transparent 42%),radial-gradient(ellipse at 88% 78%,rgba(75,83,66,.24),transparent 34%);filter:blur(26px) saturate(.72);opacity:.9;animation:mist 50s ease-in-out infinite alternate;pointer-events:none}
 @keyframes mist{from{transform:translate(-3%,-2%) scale(1)}to{transform:translate(4%,3%) scale(1.12)}}
+#map .leaflet-image-layer,#emap .leaflet-image-layer{transition:filter 1.2s ease}
+#map.season-spring,#emap.season-spring{--season-image-filter:contrast(1.04) brightness(1.06) saturate(1.06) sepia(.025)}
+#map.season-summer,#emap.season-summer{--season-image-filter:contrast(1.04) brightness(1.09) saturate(1.12)}
+#map.season-autumn,#emap.season-autumn{--season-image-filter:contrast(1.05) brightness(1.02) saturate(.84) sepia(.13)}
+#map.season-winter,#emap.season-winter{--season-image-filter:contrast(1) brightness(1.1) saturate(.7) sepia(.04)}
+#map.season-spring::before,#emap.season-spring::before{filter:blur(26px) saturate(.9) hue-rotate(-8deg)}
+#map.season-summer::before,#emap.season-summer::before{filter:blur(26px) saturate(.86) brightness(1.08)}
+#map.season-autumn::before,#emap.season-autumn::before{filter:blur(27px) saturate(.76) sepia(.16)}
+#map.season-winter::before,#emap.season-winter::before{filter:blur(29px) saturate(.52) brightness(1.13)}
+#map::after,#emap::after{content:'';position:absolute;inset:0;z-index:650;pointer-events:none;opacity:0;transition:opacity 1s ease;mix-blend-mode:screen}
+#map.season-autumn::after,#emap.season-autumn::after{opacity:.2;background-image:radial-gradient(ellipse 4px 2px at 28px 34px,rgba(222,164,82,.88) 52%,transparent 78%),radial-gradient(ellipse 3px 1.5px at 106px 96px,rgba(157,100,54,.75) 52%,transparent 78%),radial-gradient(ellipse 3px 1.5px at 194px 51px,rgba(198,122,58,.72) 52%,transparent 78%);background-size:230px 190px,270px 230px,310px 250px;animation:autumn-drift 26s linear infinite}
+#map.season-winter::after,#emap.season-winter::after{opacity:.23;background-image:radial-gradient(1.5px 1.5px at 18px 26px,rgba(255,255,245,.94) 65%,transparent 100%),radial-gradient(2px 2px at 92px 106px,rgba(230,239,237,.8) 65%,transparent 100%),radial-gradient(1px 1px at 151px 65px,rgba(255,255,255,.8) 65%,transparent 100%);background-size:190px 170px,250px 220px,310px 270px;animation:snow-drift 22s linear infinite}
+@keyframes autumn-drift{to{background-position:35px 210px,-28px 250px,44px 290px}}
+@keyframes snow-drift{to{background-position:25px 210px,-32px 240px,18px 280px}}
+@media(prefers-reduced-motion:reduce){#map.season-autumn::after,#emap.season-autumn::after,#map.season-winter::after,#emap.season-winter::after{animation:none}}
 .leaflet-popup-content-wrapper{background:linear-gradient(180deg,#1d1f17,#14150f)!important;color:var(--tx)!important;border:1px solid var(--gd);border-radius:14px!important;box-shadow:0 10px 30px #000c!important}
 .leaflet-popup-tip{background:#14150f!important;border:1px solid var(--gd)}
 .leaflet-popup-content{margin:12px 14px!important;font-family:Rubik,sans-serif;text-align:left}
@@ -147,7 +162,7 @@ nav a,.tabs button{font-size:13px}.st{font-size:11px}button.pr:hover{filter:brig
 <script src="./firebase-config.js"></script>
 <script>
 var TYPES={mine:['⛏','Шахты и пещеры'],post:['🛡','Блок-пост'],horde:['☠','Возможна орда'],factory:['🏭','Заброшенный завод'],stash:['📦','Возможен склад'],grave:['⚰','Кладбище'],sawmill:['🪚','Лесопилка'],tower:['🗼','Вышка'],farm:['🌾','Ферма'],camp:['⛺','База отдыха'],fish:['🎣','Рыболовля'],hosp:['🏥','Больница'],village:['🏘','Деревня'],plane:['✈','Упавший самолёт'],port:['⚓','Порт'],metro:['Ⓜ','Метро']};
-var SEASONS=['Весна','Лето','Осень','Холодный'],COLORS=['#e2b94a','#4fb3a5','#c0392b','#6a8fd8','#b36ad8','#8fd14f'];
+var SEASONS=['Весна','Лето','Осень','Зима'],COLORS=['#e2b94a','#4fb3a5','#c0392b','#6a8fd8','#b36ad8','#8fd14f'];
 var W=1280,H=715,IMG="map-base.svg";
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function $(i){return document.getElementById(i)}
@@ -196,7 +211,8 @@ async function publishMapDraft(){if(!mapDraftActive||!mapDraftDirty)return false
 function discardMapDraft(){if(!mapDraftActive||!mapDraftDirty)return false;try{localStorage.removeItem(MAP_DRAFT_KEY)}catch(e){storageError(e);return false}applyMapState(mapPublishedSnapshot);mapDraftSnapshot=copyMapState(mapPublishedSnapshot);mapDraftDirty=false;UND=[];RED=[];SELO=null;if(typeof refresh==='function'){refresh();drawGrid()}updateDraftUi();toast('Черновик отменён. Сохранённая карта не изменена.','ok');return true}
 function endMapDraft(){if(!mapDraftActive)return;if(mapDraftDirty){try{localStorage.setItem(MAP_DRAFT_KEY,JSON.stringify({v:1,updated:Date.now(),data:copyMapState(D)}))}catch(e){storageError(e)}}applyMapState(mapPublishedSnapshot);mapDraftActive=false;if(pendingCloudWorldData){var pending=pendingCloudWorldData;pendingCloudWorldData=null;applyCloudWorld(pending)}if(typeof drawMap==='function'){drawMap();drawFeat();drawLeg()}}
 function me(){if(!LLAuthState.user)return null;if(isMaster())return D.squads.filter(function(s){return s.id===D.me})[0];return D.squads.filter(function(s){return s.ownerUid===LLAuthState.user.uid})[0]}
-function clock(){var g=GAME_CLOCK||legacyGameClock(),m=g.month,s=m>=3&&m<=5?0:m>=6&&m<=8?1:m>=9&&m<=11?2:3;$('clock').textContent='Год '+g.year+' · Ход '+g.turn+' · '+g.day+' '+MONTHS[m-1]+' · '+SEASONS[s]}
+function updateSeasonMapVisuals(month){var m=Math.min(12,Math.max(1,Number(month)||3)),s=m>=3&&m<=5?0:m>=6&&m<=8?1:m>=9&&m<=11?2:3,key=['spring','summer','autumn','winter'][s];['map','emap'].forEach(function(id){var el=$(id);if(!el)return;el.classList.remove('season-spring','season-summer','season-autumn','season-winter');el.classList.add('season-'+key);el.setAttribute('data-season',key)})}
+function clock(){var g=GAME_CLOCK||legacyGameClock(),m=g.month,s=m>=3&&m<=5?0:m>=6&&m<=8?1:m>=9&&m<=11?2:3;updateSeasonMapVisuals(m);$('clock').textContent='Год '+g.year+' · Ход '+g.turn+' · '+g.day+' '+MONTHS[m-1]+' · '+SEASONS[s]}
 // навигация
 var V=['map','wall','state','rules','admin','editor'];
 function go(){var h=(location.hash||'#map').slice(1);if(V.indexOf(h)<0||((h==='admin'||h==='editor')&&!isMaster()))h='map';if(h==='editor'&&currentView!=='editor')beginMapDraft();if(currentView==='editor'&&h!=='editor')endMapDraft();currentView=h;$('admlink').style.display=isMaster()?'inline-block':'none';$('edlink').style.display=isMaster()?'inline-block':'none';$('pop').classList.remove('on');
