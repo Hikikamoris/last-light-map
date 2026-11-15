@@ -6,6 +6,7 @@
   var masterDirectoryBusy = false;
   var masterDirectoryUpdatedAt = 0;
   var privateMarkers = [];
+  var wallChannel = "all";
   var privateMapLayer = L.layerGroup().addTo(map);
   var privateEditorLayer = null;
   var privateEditorCaptureBound = false;
@@ -81,6 +82,22 @@
     }).finally(function () { masterDirectoryBusy = false; });
   }
 
+  function renderChannelFilter() {
+    var statusFilter = document.getElementById("wf");
+    if (!statusFilter) return;
+    var current = document.getElementById("wall-channel-filter");
+    if (!current) {
+      statusFilter.insertAdjacentHTML("afterend", '<label class="fi" style="margin-top:8px">Канал стены<select id="wall-channel-filter"></select></label>');
+      current = document.getElementById("wall-channel-filter");
+    }
+    var values = ["Радиопереговоры", "События", "Слухи", "Объявления"];
+    var entries = authApi() && authApi().wallEntries ? authApi().wallEntries() : [];
+    entries.forEach(function (entry) { if (entry.kind === "broadcast" && entry.channel && values.indexOf(entry.channel) < 0) values.push(entry.channel); });
+    current.innerHTML = '<option value="all">Все каналы</option>' + values.map(function (channel) { return '<option value="' + esc(channel) + '">' + esc(channel) + '</option>'; }).join("");
+    current.value = wallChannel;
+    current.onchange = function () { wallChannel = current.value; renderWall(); };
+  }
+
   function privateIcon(marker) {
     var p = { t: TYPES[marker.symbol] ? marker.symbol : "post", c: marker.color || "#e2b94a", caption: marker.caption || "" };
     return markerIconForPoint(p, 17);
@@ -138,9 +155,10 @@
     var card = form.closest(".card");
     if (!card) return;
     card.setAttribute("data-broadcast-composer", "true");
-    card.innerHTML = '<h3>Новая запись на Стену</h3><p style="color:var(--mu);margin:4px 0 10px">Выберите канал, автора и аудиторию. Игроки смогут отвечать в комментариях под записью.</p><div class="grid"><label class="fi">Канал<select id="broadcast-channel"><option>Радиопереговоры</option><option>События</option><option>Слухи</option><option>Объявления</option><option>Другое</option></select></label><label class="fi">От чьего лица<input id="broadcast-sender" maxlength="80" value="Диспетчер" placeholder="Например: Радио 7, очевидец"></label></div><label class="fi">Кто увидит<select id="broadcast-audience"><option value="all">Все игроки</option><option value="selected">Только выбранные аккаунты</option></select></label><div id="broadcast-target-wrap" style="display:none"><b>Выберите игроков</b><div class="audience-list" data-player-picker="broadcast">Загружаю аккаунты…</div></div><textarea id="broadcast-text" rows="4" maxlength="12000" style="width:100%;margin:8px 0" placeholder="Текст радиопереговоров, события или объявления…"></textarea><button class="pr" data-broadcast-publish>Опубликовать запись</button><label class="fi" style="margin-top:14px">Показать<select id="wf"><option value="all">Все записи</option><option value="Ожидает вердикта">Ожидают вердикта</option><option value="Принято">Принятые</option><option value="Отклонено">Отклонённые</option><option value="Событие">События и радиопереговоры</option></select></label>';
+    card.innerHTML = '<h3>Новая запись на Стену</h3><p style="color:var(--mu);margin:4px 0 10px">Выберите канал, автора и аудиторию. Игроки смогут отвечать в комментариях под записью.</p><div class="grid"><label class="fi">Канал<select id="broadcast-channel"><option>Радиопереговоры</option><option>События</option><option>Слухи</option><option>Объявления</option><option value="custom">Другое</option></select></label><label class="fi">От чьего лица<input id="broadcast-sender" maxlength="80" value="Диспетчер" placeholder="Например: Радио 7, очевидец"></label></div><label class="fi" id="broadcast-custom-channel-wrap" style="display:none">Название канала<input id="broadcast-custom-channel" maxlength="40" placeholder="Например: Связь отряда"></label><label class="fi">Кто увидит<select id="broadcast-audience"><option value="all">Все игроки</option><option value="selected">Только выбранные аккаунты</option></select></label><div id="broadcast-target-wrap" style="display:none"><b>Выберите игроков</b><div class="audience-list" data-player-picker="broadcast">Загружаю аккаунты…</div></div><textarea id="broadcast-text" rows="4" maxlength="12000" style="width:100%;margin:8px 0" placeholder="Текст радиопереговоров, события или объявления…"></textarea><button class="pr" data-broadcast-publish>Опубликовать запись</button><label class="fi" style="margin-top:14px">Показать<select id="wf"><option value="all">Все записи</option><option value="Ожидает вердикта">Ожидают вердикта</option><option value="Принято">Принятые</option><option value="Отклонено">Отклонённые</option><option value="Событие">События и радиопереговоры</option></select></label>';
     var filter = document.getElementById("wf");
     if (filter) { filter.value = wf; filter.onchange = function () { wf = this.value; renderWall(); }; }
+    renderChannelFilter();
     loadMasterDirectory(false);
   }
 
@@ -149,7 +167,16 @@
     if (!box) return;
     if (!window.LLAuthState || !window.LLAuthState.configured) { box.textContent = "Общие записи стены появятся после подключения Firebase."; return; }
     var entries = authApi() && authApi().wallEntries ? authApi().wallEntries() : [];
+    var channelFilter = document.getElementById("wall-channel-filter");
+    if (channelFilter) {
+      var selectedChannel = wallChannel;
+      var values = ["Радиопереговоры", "События", "Слухи", "Объявления"];
+      entries.forEach(function (entry) { if (entry.kind === "broadcast" && entry.channel && values.indexOf(entry.channel) < 0) values.push(entry.channel); });
+      channelFilter.innerHTML = '<option value="all">Все каналы</option>' + values.map(function (channel) { return '<option value="' + esc(channel) + '">' + esc(channel) + '</option>'; }).join("");
+      channelFilter.value = selectedChannel;
+    }
     if (wf !== "all") entries = entries.filter(function (p) { return p.status === wf; });
+    if (wallChannel !== "all") entries = entries.filter(function (p) { return p.kind === "broadcast" && (p.channel || "События") === wallChannel; });
     if (!entries.length) { box.innerHTML = '<div class="card" style="color:var(--mu)">Пока нет общих публикаций.</div>'; return; }
     box.innerHTML = entries.map(function (p) {
       var status = p.status || "Опубликовано";
@@ -168,7 +195,7 @@
     }).join("");
   }
 
-  rWall = function () { baseWall(); renderMasterWallComposer(); };
+  rWall = function () { baseWall(); renderMasterWallComposer(); renderChannelFilter(); renderWall(); };
   renderCloudWall = renderWall;
   drawMap = function () { baseDrawMap(); drawPrivateMarkers(); };
   drawLeg = function () { baseDrawLeg(); renderPrivateLegend(); };
@@ -215,6 +242,10 @@
       var wrap = document.getElementById("broadcast-target-wrap");
       if (wrap) wrap.style.display = event.target.value === "selected" ? "block" : "none";
     }
+    if (event.target.id === "broadcast-channel") {
+      var custom = document.getElementById("broadcast-custom-channel-wrap");
+      if (custom) custom.style.display = event.target.value === "custom" ? "block" : "none";
+    }
   });
   document.getElementById("wall").addEventListener("click", function (event) {
     var button = event.target.closest && event.target.closest("[data-broadcast-publish]");
@@ -222,7 +253,7 @@
     var selected = Array.from(document.querySelectorAll('[data-player-recipient="broadcast"]:checked')).map(function (input) { return input.value; });
     var audience = document.getElementById("broadcast-audience").value;
     authApi().createBroadcast({
-      channel: document.getElementById("broadcast-channel").value,
+      channel: document.getElementById("broadcast-channel").value === "custom" ? document.getElementById("broadcast-custom-channel").value : document.getElementById("broadcast-channel").value,
       senderName: document.getElementById("broadcast-sender").value,
       audience: audience,
       visibleTo: audience === "selected" ? selected : [],
@@ -313,7 +344,7 @@
     renderPrivateLegend();
     var composer = document.querySelector('[data-broadcast-composer="true"]');
     if (location.hash === "#wall" && isMasterNow() && !composer) renderMasterWallComposer();
-    else if (location.hash === "#wall" && !isMasterNow() && composer) baseWall();
+    else if (location.hash === "#wall" && !isMasterNow() && composer) { baseWall(); renderChannelFilter(); renderWall(); }
   });
   window.addEventListener("hashchange", function () {
     if (location.hash === "#wall" && isMasterNow()) setTimeout(renderMasterWallComposer, 0);
