@@ -13,6 +13,7 @@ let stopApplication = null;
 let stopPosts = null;
 let stopOrders = null;
 let stopGameClock = null;
+let stopWorld = null;
 let wallEntries = [];
 const DEFAULT_GAME_CLOCK = { turn: 1, year: 1, month: 3, day: 1, advanceValue: 7, advanceUnit: "days" };
 
@@ -61,6 +62,30 @@ function watchGameClock() {
     const gameClock = snap.exists() ? normalizeGameClock(snap.data()) : null;
     window.dispatchEvent(new CustomEvent("ll:game-clock", { detail: gameClock }));
   }, (error) => { state.error = error.message; publish(); });
+}
+
+function watchWorld() {
+  if (stopWorld) stopWorld();
+  stopWorld = onSnapshot(doc(db, "public", "world"), (snap) => {
+    window.dispatchEvent(new CustomEvent("ll:world-data", {
+      detail: snap.exists() ? { exists: true, ...snap.data() } : null
+    }));
+  }, (error) => {
+    window.dispatchEvent(new CustomEvent("ll:world-data", { detail: { error: error.message || "Не удалось загрузить общую карту." } }));
+  });
+}
+
+function worldDocument(world) {
+  const squads = Array.isArray(world?.squads) ? world.squads : null;
+  const map = world?.map;
+  if (!squads || !map || !["lines", "zones", "labels", "pts"].every((key) => Array.isArray(map[key]))) {
+    throw new Error("Не удалось подготовить отряды и карту для общей базы.");
+  }
+  const data = JSON.parse(JSON.stringify({ squads, map }));
+  if (new Blob([JSON.stringify(data)]).size > 850000) {
+    throw new Error("Общая карта слишком большая для одной записи. Уменьшите число объектов или разделите их.");
+  }
+  return { ...data, version: 1, updatedBy: state.user.uid, updatedAt: serverTimestamp() };
 }
 
 function publish() {
@@ -177,6 +202,22 @@ const api = {
       transaction.set(ref, { ...next, updatedBy: state.user.uid, updatedAt: serverTimestamp() });
       return next;
     });
+  },
+  async saveWorld(world) {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Публиковать отряды и карту может только мастер.");
+    await setDoc(doc(db, "public", "world"), worldDocument(world), { merge: true });
+  },
+  async initializeWorld(world) {
+    if (!db || state.profile?.role !== "owner") throw new Error("Первую общую версию может опубликовать только создатель проекта.");
+    const ref = doc(db, "public", "world");
+    const payload = worldDocument(world);
+    const created = await runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      if (snap.exists()) return false;
+      transaction.set(ref, payload);
+      return true;
+    });
+    if (!created) throw new Error("Общая версия уже создана другим мастером. Обновите страницу и продолжайте от неё.");
   },
   async advanceGameClock(fallback) {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Менять игровой ход может только мастер.");
@@ -346,6 +387,7 @@ if (!isUsableConfig(config)) {
     db = getFirestore(app);
     state.configured = true;
     watchGameClock();
+    watchWorld();
     getRedirectResult(auth).catch((error) => {
       state.error = error.message || "Не удалось завершить вход Google.";
       publish();
