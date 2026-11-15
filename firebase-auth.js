@@ -128,14 +128,16 @@ const api = {
   get state() { return { ...state }; },
   async signIn() {
     if (!auth) throw new Error("Google-вход ещё не подключён: сначала нужен Firebase-проект.");
-    if (authPersistence) await setPersistence(auth, authPersistence);
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
-    try { await signInWithPopup(auth, provider); }
+    try {
+      const credential = await signInWithPopup(auth, provider);
+      return credential.user;
+    }
     catch (error) {
-      if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment"].includes(error.code)) {
+      if (error.code === "auth/operation-not-supported-in-this-environment") {
         await signInWithRedirect(auth, provider);
-        return;
+        return null;
       }
       throw error;
     }
@@ -338,7 +340,7 @@ if (!isUsableConfig(config)) {
       authPersistence = browserLocalPersistence;
     } catch (error) {
       authPersistence = browserSessionPersistence;
-      state.notice = "Этот браузер не разрешает сохранять вход после закрытия вкладки. В обычном окне браузера разрешите сохранение данных сайта; сейчас вход сохранится только до закрытия вкладки.";
+      state.notice = "Браузер не сохранил вход надолго. Используйте обычное окно. В Edge разрешите cookies и данные сайта для hikikamoris.github.io и отключите их удаление при закрытии браузера. Пока вход действует только до закрытия вкладки.";
       await setPersistence(auth, browserSessionPersistence);
     }
     db = getFirestore(app);
