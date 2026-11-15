@@ -155,6 +155,24 @@ const api = {
       return next;
     });
   },
+  async saveGameDate(year, month, day, fallback) {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Менять игровую дату может только мастер.");
+    const gameYear = Math.floor(Number(year));
+    const gameMonth = Math.floor(Number(month));
+    const gameDay = Math.floor(Number(day));
+    if (!Number.isInteger(gameYear) || gameYear < 1 || gameYear > 9999) throw new Error("Укажите год от 1 до 9999.");
+    if (!Number.isInteger(gameMonth) || gameMonth < 1 || gameMonth > 12) throw new Error("Выберите месяц от января до декабря.");
+    const maxDay = daysInMonth(gameYear, gameMonth);
+    if (!Number.isInteger(gameDay) || gameDay < 1 || gameDay > maxDay) throw new Error(`В этом месяце должно быть от 1 до ${maxDay} дней.`);
+    const ref = doc(db, "public", "gameClock");
+    return runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      const current = normalizeGameClock(snap.exists() ? snap.data() : fallback || DEFAULT_GAME_CLOCK);
+      const next = { ...current, year: gameYear, month: gameMonth, day: gameDay };
+      transaction.set(ref, { ...next, updatedBy: state.user.uid, updatedAt: serverTimestamp() });
+      return next;
+    });
+  },
   async advanceGameClock(fallback) {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Менять игровой ход может только мастер.");
     const ref = doc(db, "public", "gameClock");
