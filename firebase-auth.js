@@ -1,7 +1,7 @@
 let initializeApp, getAuth, GoogleAuthProvider, onAuthStateChanged;
 let signInWithPopup, signInWithRedirect, getRedirectResult, signOut;
 let getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs;
-let query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch;
+let query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch, runTransaction;
 
 const state = { ready: false, configured: false, user: null, profile: null, application: null, error: "" };
 let auth = null;
@@ -10,7 +10,56 @@ let stopProfile = null;
 let stopApplication = null;
 let stopPosts = null;
 let stopOrders = null;
+let stopGameClock = null;
 let wallEntries = [];
+const DEFAULT_GAME_CLOCK = { turn: 1, year: 1, month: 3, day: 1, advanceValue: 7, advanceUnit: "days" };
+
+function daysInMonth(year, month) {
+  if (month === 2) return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+function normalizeGameClock(value) {
+  const source = value || DEFAULT_GAME_CLOCK;
+  const year = Math.max(1, Math.floor(Number(source.year) || 1));
+  const month = Math.min(12, Math.max(1, Math.floor(Number(source.month) || 3)));
+  const day = Math.min(daysInMonth(year, month), Math.max(1, Math.floor(Number(source.day) || 1)));
+  const advanceUnit = source.advanceUnit === "months" ? "months" : "days";
+  const max = advanceUnit === "months" ? 12 : 366;
+  const advanceValue = Math.min(max, Math.max(1, Math.floor(Number(source.advanceValue) || 7)));
+  return {
+    turn: Math.max(1, Math.floor(Number(source.turn) || 1)),
+    year, month, day, advanceValue, advanceUnit
+  };
+}
+
+function advanceCalendar(clock) {
+  const next = { ...clock, turn: clock.turn + 1 };
+  if (clock.advanceUnit === "months") {
+    const totalMonths = (clock.year - 1) * 12 + clock.month - 1 + clock.advanceValue;
+    next.year = Math.floor(totalMonths / 12) + 1;
+    next.month = totalMonths % 12 + 1;
+    next.day = Math.min(clock.day, daysInMonth(next.year, next.month));
+    return next;
+  }
+  for (let i = 0; i < clock.advanceValue; i++) {
+    next.day++;
+    if (next.day > daysInMonth(next.year, next.month)) {
+      next.day = 1;
+      next.month++;
+      if (next.month > 12) { next.month = 1; next.year++; }
+    }
+  }
+  return next;
+}
+
+function watchGameClock() {
+  if (stopGameClock) stopGameClock();
+  stopGameClock = onSnapshot(doc(db, "public", "gameClock"), (snap) => {
+    const gameClock = snap.exists() ? normalizeGameClock(snap.data()) : null;
+    window.dispatchEvent(new CustomEvent("ll:game-clock", { detail: gameClock }));
+  }, (error) => { state.error = error.message; publish(); });
+}
 
 function publish() {
   state.ready = true;
@@ -89,6 +138,34 @@ const api = {
     }
   },
   async signOut() { if (auth) await signOut(auth); },
+  async saveGameClockStep(value, unit, fallback) {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Настраивать игровое время может только мастер.");
+    const advanceUnit = unit === "months" ? "months" : "days";
+    const max = advanceUnit === "months" ? 12 : 366;
+    const advanceValue = Math.floor(Number(value));
+    if (!Number.isFinite(advanceValue) || advanceValue < 1 || advanceValue > max) {
+      throw new Error(advanceUnit === "months" ? "Укажите от 1 до 12 месяцев." : "Укажите от 1 до 366 дней.");
+    }
+    const ref = doc(db, "public", "gameClock");
+    return runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      const current = normalizeGameClock(snap.exists() ? snap.data() : fallback || DEFAULT_GAME_CLOCK);
+      const next = { ...current, advanceValue, advanceUnit };
+      transaction.set(ref, { ...next, updatedBy: state.user.uid, updatedAt: serverTimestamp() });
+      return next;
+    });
+  },
+  async advanceGameClock(fallback) {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Менять игровой ход может только мастер.");
+    const ref = doc(db, "public", "gameClock");
+    return runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(ref);
+      const current = normalizeGameClock(snap.exists() ? snap.data() : fallback || DEFAULT_GAME_CLOCK);
+      const next = advanceCalendar(current);
+      transaction.set(ref, { ...next, updatedBy: state.user.uid, updatedAt: serverTimestamp() });
+      return next;
+    });
+  },
   async submitApplication(application) {
     const user = state.user;
     if (!user || !db) throw new Error("Сначала войдите через Google.");
@@ -232,11 +309,12 @@ if (!isUsableConfig(config)) {
     ]);
     ({ initializeApp } = appSdk);
     ({ getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } = authSdk);
-    ({ getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch } = firestoreSdk);
+    ({ getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch, runTransaction } = firestoreSdk);
     const app = initializeApp(config);
     auth = getAuth(app);
     db = getFirestore(app);
     state.configured = true;
+    watchGameClock();
     getRedirectResult(auth).catch((error) => {
       state.error = error.message || "Не удалось завершить вход Google.";
       publish();
