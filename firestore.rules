@@ -13,10 +13,18 @@ service cloud.firestore {
       return hasProfile() && role() == 'player' &&
         get(userPath(request.auth.uid)).data.status == 'active';
     }
+    function canReadBroadcast() {
+      return isMaster() || resource.data.audience == 'all' ||
+        (signedIn() && resource.data.visibleTo is list && request.auth.uid in resource.data.visibleTo);
+    }
+    function canReadBroadcastData(data) {
+      return isMaster() || data.audience == 'all' ||
+        (signedIn() && data.visibleTo is list && request.auth.uid in data.visibleTo);
+    }
 
     match /users/{uid} {
       allow get: if own(uid) || isOwner();
-      allow list: if isOwner();
+      allow list: if isMaster();
       allow create: if own(uid) &&
         request.resource.data.uid == uid &&
         request.resource.data.role == 'player' &&
@@ -98,6 +106,68 @@ service cloud.firestore {
           request.resource.data.authorUid == request.auth.uid;
         allow delete: if isActivePlayer() && own(uid);
       }
+    }
+
+    match /masterNotes/{uid} {
+      allow get, list: if isMaster();
+      allow create, update: if isMaster() &&
+        request.resource.data.uid == uid &&
+        request.resource.data.alias is string && request.resource.data.alias.size() <= 80 &&
+        request.resource.data.updatedBy == request.auth.uid &&
+        request.resource.data.keys().hasOnly(['uid', 'alias', 'updatedBy', 'updatedAt']);
+      allow delete: if isMaster();
+    }
+
+    match /broadcasts/{broadcastId} {
+      allow get, list: if canReadBroadcast();
+      allow create: if isMaster() &&
+        request.resource.data.authorUid == request.auth.uid &&
+        request.resource.data.senderName is string && request.resource.data.senderName.size() > 0 &&
+        request.resource.data.channel is string && request.resource.data.channel.size() > 0 &&
+        request.resource.data.text is string && request.resource.data.text.size() > 0 &&
+        request.resource.data.audience in ['all', 'selected'] &&
+        request.resource.data.visibleTo is list && request.resource.data.visibleTo.size() <= 100 &&
+        ((request.resource.data.audience == 'all' && request.resource.data.visibleTo.size() == 0) ||
+          (request.resource.data.audience == 'selected' && request.resource.data.visibleTo.size() > 0)) &&
+        request.resource.data.status == 'Событие' &&
+        request.resource.data.keys().hasOnly([
+          'authorUid', 'senderName', 'channel', 'text', 'imageUrl', 'audience', 'visibleTo',
+          'status', 'createdAt', 'updatedAt'
+        ]);
+      allow update, delete: if isMaster();
+
+      match /comments/{commentId} {
+        function canReadParentBroadcast() {
+          return canReadBroadcastData(get(/databases/$(database)/documents/broadcasts/$(broadcastId)).data);
+        }
+        allow get, list: if canReadParentBroadcast();
+        allow create: if canReadParentBroadcast() && (isActivePlayer() || isMaster()) &&
+          request.resource.data.authorUid == request.auth.uid &&
+          request.resource.data.text is string && request.resource.data.text.size() > 0 &&
+          request.resource.data.keys().hasOnly(['authorUid', 'displayName', 'text', 'createdAt']);
+        allow update, delete: if canReadParentBroadcast() && (isMaster() ||
+          (isActivePlayer() && resource.data.authorUid == request.auth.uid));
+      }
+    }
+
+    match /privateMapMarkers/{markerId} {
+      allow get, list: if isMaster() ||
+        (signedIn() && resource.data.visibleTo is list && request.auth.uid in resource.data.visibleTo);
+      allow create, update: if isMaster() &&
+        request.resource.data.x is number && request.resource.data.y is number &&
+        request.resource.data.symbol is string && request.resource.data.symbol.size() <= 32 &&
+        request.resource.data.title is string && request.resource.data.title.size() <= 100 &&
+        request.resource.data.caption is string && request.resource.data.caption.size() <= 48 &&
+        request.resource.data.description is string && request.resource.data.description.size() <= 1000 &&
+        request.resource.data.color is string && request.resource.data.color.matches('^#[0-9a-fA-F]{6}$') &&
+        request.resource.data.visibleTo is list && request.resource.data.visibleTo.size() > 0 &&
+        request.resource.data.visibleTo.size() <= 100 &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.keys().hasOnly([
+          'x', 'y', 'symbol', 'title', 'caption', 'description', 'color', 'visibleTo',
+          'createdBy', 'createdAt', 'updatedAt'
+        ]);
+      allow delete: if isMaster();
     }
 
     match /orders/{orderId} {
