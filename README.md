@@ -1,8 +1,9 @@
 # Last Light — карта выживших
 
-Static GitHub Pages package for the interactive map.
+Публичная версия интерактивной карты для RP-проекта.
 
-- `index.html` contains the complete application and its embedded map image.
-- The map library and fonts load from their public CDNs.
-- Current map edits and RP data are stored in each visitor's browser. They are not shared between visitors.
-- Google sign-in and a shared database are not configured in this build.
+- index.html содержит метаданные для карточек ссылок и открывает приложение в полноэкранном режиме.
+- app.html содержит само приложение и встроенную карту.
+- preview.jpg — обложка для превью ссылок (1200 × 630).
+- Текущие изменения карты и RP-данные сохраняются в браузере каждого посетителя. Они не синхронизируются между игроками.
+- Общая база данных и вход через Google пока не настроены.
