@@ -1,0 +1,272 @@
+let initializeApp, getAuth, GoogleAuthProvider, onAuthStateChanged;
+let signInWithPopup, signInWithRedirect, getRedirectResult, signOut;
+let getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs;
+let query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch;
+
+const state = { ready: false, configured: false, user: null, profile: null, application: null, error: "" };
+let auth = null;
+let db = null;
+let stopProfile = null;
+let stopApplication = null;
+let stopPosts = null;
+let stopOrders = null;
+let wallEntries = [];
+
+function publish() {
+  state.ready = true;
+  window.LLAuthState = { ...state };
+  window.dispatchEvent(new CustomEvent("ll:auth-state", { detail: window.LLAuthState }));
+}
+
+function isUsableConfig(config) {
+  return !!config && ["apiKey", "authDomain", "projectId", "appId"].every((key) =>
+    typeof config[key] === "string" && config[key].trim() && !config[key].includes("REPLACE")
+  );
+}
+
+async function ensurePlayerProfile(user) {
+  const ref = doc(db, "users", user.uid);
+  const existing = await getDoc(ref);
+  if (!existing.exists()) {
+    await setDoc(ref, {
+      uid: user.uid,
+      displayName: user.displayName || "Игрок",
+      photoURL: user.photoURL || "",
+      email: user.email || "",
+      role: "player",
+      status: "visitor",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+  }
+}
+
+function clearListeners() {
+  if (stopProfile) stopProfile();
+  if (stopApplication) stopApplication();
+  if (stopPosts) stopPosts();
+  if (stopOrders) stopOrders();
+  stopProfile = stopApplication = null;
+  stopPosts = stopOrders = null;
+  wallEntries = [];
+  window.dispatchEvent(new CustomEvent("ll:wall-data", { detail: wallEntries }));
+}
+
+function startWallListeners() {
+  if (!db) return;
+  if (stopPosts) stopPosts();
+  if (stopOrders) stopOrders();
+  stopPosts = onSnapshot(query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(100)), (snap) => {
+    const entries = snap.docs.map((d) => ({ id: d.id, cloud: true, kind: "post", ...d.data() }));
+    wallEntries = wallEntries.filter((x) => x.kind === "order").concat(entries);
+    window.dispatchEvent(new CustomEvent("ll:wall-data", { detail: wallEntries }));
+  }, (error) => { state.error = error.message; publish(); });
+  if (state.user) {
+    const orderQuery = ["master", "owner"].includes(state.profile?.role)
+      ? query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(100))
+      : query(collection(db, "orders"), where("authorUid", "==", state.user.uid), limit(100));
+    stopOrders = onSnapshot(orderQuery, (snap) => {
+      const entries = snap.docs.map((d) => ({ id: d.id, cloud: true, kind: "order", ...d.data() }));
+      wallEntries = wallEntries.filter((x) => x.kind !== "order").concat(entries);
+      window.dispatchEvent(new CustomEvent("ll:wall-data", { detail: wallEntries }));
+    }, (error) => { state.error = error.message; publish(); });
+  }
+}
+
+const api = {
+  get state() { return { ...state }; },
+  async signIn() {
+    if (!auth) throw new Error("Google-вход ещё не подключён: сначала нужен Firebase-проект.");
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    try { await signInWithPopup(auth, provider); }
+    catch (error) {
+      if (["auth/popup-blocked", "auth/operation-not-supported-in-this-environment"].includes(error.code)) {
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+      throw error;
+    }
+  },
+  async signOut() { if (auth) await signOut(auth); },
+  async submitApplication(application) {
+    const user = state.user;
+    if (!user || !db) throw new Error("Сначала войдите через Google.");
+    if ((state.profile && state.profile.status === "active") || state.application?.status === "pending") {
+      throw new Error("Заявка уже отправлена или доступ уже одобрен.");
+    }
+    const name = String(application.name || "").trim();
+    const callSign = String(application.callSign || "").trim();
+    const members = Array.isArray(application.members) ? application.members.slice(0, 8) : [];
+    if (!name || !callSign || !members.length || members.some((m) => !String(m.n || "").trim() || !String(m.spec || "").trim())) {
+      throw new Error("Заполните название отряда, позывной и данные бойцов.");
+    }
+    await setDoc(doc(db, "applications", user.uid), {
+      applicantUid: user.uid,
+      submittedBy: user.uid,
+      squadName: name,
+      callSign,
+      members,
+      status: "pending",
+      decisionReason: "",
+      submittedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+  },
+  wallEntries() { return wallEntries.slice().sort((a, b) => {
+    const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+    const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+    return tb - ta;
+  }); },
+  async createWallEntry(text, imageUrl = "") {
+    const user = state.user;
+    if (!user || !db) throw new Error("Сначала войдите через Google.");
+    const body = String(text || "").trim();
+    if (!body) throw new Error("Напишите текст.");
+    if (["master", "owner"].includes(state.profile?.role)) {
+      await setDoc(doc(collection(db, "posts")), {
+        authorUid: user.uid, authorName: "Мастер проекта", text: body, imageUrl: imageUrl || "",
+        status: "Событие", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+      });
+      return;
+    }
+    if (state.profile?.role !== "player" || state.profile?.status !== "active") {
+      throw new Error("Игровые действия откроются после одобрения заявки мастером.");
+    }
+    await setDoc(doc(collection(db, "orders")), {
+      authorUid: user.uid, authorName: state.application?.callSign || "Игрок", squadId: state.profile.squadId || user.uid,
+      squadName: state.application?.squadName || "Отряд", text: body, imageUrl: imageUrl || "",
+      status: "Ожидает вердикта", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+    });
+  },
+  async decideOrder(id, status, verdict) {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Нет прав мастера.");
+    await updateDoc(doc(db, "orders", id), {
+      status: String(status), verdict: String(verdict || ""),
+      reviewedBy: state.user.uid, updatedAt: serverTimestamp()
+    });
+  },
+  async listComments(postId) {
+    if (!db) return [];
+    const snap = await getDocs(query(collection(db, "posts", postId, "comments"), orderBy("createdAt", "asc"), limit(100)));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+  async addComment(postId, text) {
+    if (!state.user || !db || (!(["master", "owner"].includes(state.profile?.role)) && state.profile?.status !== "active")) {
+      throw new Error("Комментарии доступны после одобрения заявки мастером.");
+    }
+    const body = String(text || "").trim();
+    if (!body) return;
+    await setDoc(doc(collection(db, "posts", postId, "comments")), {
+      authorUid: state.user.uid, displayName: state.application?.callSign || "Игрок",
+      text: body, createdAt: serverTimestamp()
+    });
+  },
+  async react(postId, value) {
+    if (!state.user || !db || (!(["master", "owner"].includes(state.profile?.role)) && state.profile?.status !== "active")) {
+      throw new Error("Реакции доступны после одобрения заявки мастером.");
+    }
+    await setDoc(doc(db, "posts", postId, "reactions", state.user.uid), {
+      authorUid: state.user.uid, value: String(value), updatedAt: serverTimestamp()
+    });
+  },
+  async listApplications() {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Нет доступа к заявкам.");
+    const snap = await getDocs(query(collection(db, "applications"), orderBy("submittedAt", "desc")));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+  async decideApplication(uid, decision, reason = "") {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Нет прав мастера.");
+    const appRef = doc(db, "applications", uid);
+    const userRef = doc(db, "users", uid);
+    const batch = writeBatch(db);
+    batch.update(appRef, {
+      status: decision,
+      decisionReason: decision === "rejected" ? String(reason).trim() : "",
+      reviewedBy: state.user.uid,
+      reviewedAt: serverTimestamp(),
+      updatedAt: serverTimestamp()
+    });
+    batch.update(userRef, {
+      status: decision === "approved" ? "active" : "visitor",
+      squadId: decision === "approved" ? uid : "",
+      updatedBy: state.user.uid,
+      updatedAt: serverTimestamp()
+    });
+    await batch.commit();
+  },
+  async listJournal() {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Журнал доступен только мастерам.");
+    const snap = await getDocs(query(collection(db, "journal"), orderBy("createdAt", "desc"), limit(200)));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+  async listUsers() {
+    if (!db || state.profile?.role !== "owner") throw new Error("Управлять ролями может только создатель проекта.");
+    const snap = await getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"), limit(200)));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+  async setUserRole(uid, role) {
+    if (!db || state.profile?.role !== "owner" || !["player", "master"].includes(role)) {
+      throw new Error("Управлять ролями может только создатель проекта.");
+    }
+    if (uid === state.user.uid) throw new Error("Свой аккаунт нельзя понизить в роли из этого меню.");
+    await updateDoc(doc(db, "users", uid), {
+      role,
+      updatedBy: state.user.uid,
+      updatedAt: serverTimestamp()
+    });
+  }
+};
+window.LLAuth = api;
+
+const config = window.LAST_LIGHT_FIREBASE_CONFIG;
+if (!isUsableConfig(config)) {
+  state.configured = false;
+  publish();
+} else {
+  try {
+    const [appSdk, authSdk, firestoreSdk] = await Promise.all([
+      import("https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js"),
+      import("https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js")
+    ]);
+    ({ initializeApp } = appSdk);
+    ({ getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } = authSdk);
+    ({ getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch } = firestoreSdk);
+    const app = initializeApp(config);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    state.configured = true;
+    getRedirectResult(auth).catch((error) => {
+      state.error = error.message || "Не удалось завершить вход Google.";
+      publish();
+    });
+    onAuthStateChanged(auth, async (user) => {
+      clearListeners();
+      state.user = user;
+      state.profile = null;
+      state.application = null;
+      state.error = "";
+      if (!user) { startWallListeners(); publish(); return; }
+      try {
+        await ensurePlayerProfile(user);
+        stopProfile = onSnapshot(doc(db, "users", user.uid), (snap) => {
+          state.profile = snap.exists() ? snap.data() : null;
+          startWallListeners();
+          publish();
+        }, (error) => { state.error = error.message; publish(); });
+        stopApplication = onSnapshot(doc(db, "applications", user.uid), (snap) => {
+          state.application = snap.exists() ? { id: snap.id, ...snap.data() } : null;
+          startWallListeners();
+          publish();
+        }, (error) => { state.error = error.message; publish(); });
+      } catch (error) {
+        state.error = error.message || "Не удалось загрузить профиль.";
+        publish();
+      }
+    });
+  } catch (error) {
+    state.error = error.message || "Не удалось подключить Firebase.";
+    publish();
+  }
+}
