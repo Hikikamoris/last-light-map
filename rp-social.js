@@ -10,7 +10,15 @@
   var privateMapLayer = L.layerGroup().addTo(map);
   var privateEditorLayer = null;
   var privateEditorCaptureBound = false;
-  var privateForm = { title: "Личная метка", description: "", symbol: "post", color: "#e2b94a", caption: "", visibleTo: [] };
+  var privateForm = { title: "Личная метка", description: "", symbol: "post", color: "#e2b94a", caption: "", visibleTo: [], preset: "standard" };
+  var privatePresets = [
+    { id: "standard", name: "Стандарт", symbol: "post", color: "#e2b94a", caption: "" },
+    { id: "radio", name: "Радио", symbol: "tower", color: "#4f9fe0", caption: "РАДИО" },
+    { id: "shelter", name: "Укрытие", symbol: "camp", color: "#4caf50", caption: "УКРЫТИЕ" },
+    { id: "danger", name: "Опасность", symbol: "horde", color: "#e0261a", caption: "ОПАСНО" },
+    { id: "resources", name: "Ресурсы", symbol: "stash", color: "#e2b94a", caption: "РЕСУРСЫ" },
+    { id: "medical", name: "Медицина", symbol: "hosp", color: "#4caf50", caption: "МЕД" }
+  ];
   var baseWall = rWall;
   var baseRenderCloudWall = renderCloudWall;
   var baseDrawMap = drawMap;
@@ -22,6 +30,9 @@
   var style = document.createElement("style");
   style.textContent = ".master-player-row{display:grid;grid-template-columns:minmax(180px,1fr) minmax(180px,280px) auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)}.audience-list{max-height:220px;overflow:auto;border:1px solid var(--bd);border-radius:9px;padding:6px 10px;margin:8px 0}.audience-list label{display:flex;gap:8px;align-items:center;padding:6px 2px;color:var(--tx);cursor:pointer}.audience-list input{width:auto}.broadcast-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.broadcast-channel{border:1px solid #756536;color:var(--gd);padding:2px 8px;border-radius:999px;font-size:11px;text-transform:uppercase;letter-spacing:.05em}.pin-caption{border:1px solid #0007}.private-marker-delete{margin-top:8px}.private-form-note{font-size:12px;line-height:1.5;color:var(--mu);margin:8px 0}.private-marker-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd)}@media(max-width:700px){.master-player-row{grid-template-columns:1fr;gap:5px}}";
   document.head.appendChild(style);
+  var privateDesignStyle = document.createElement("style");
+  privateDesignStyle.textContent = ".private-design{margin:8px 0 12px;padding:10px;border:1px solid var(--bd);border-radius:10px;background:#10120f}.private-design-title{font:600 12px Oswald,sans-serif;letter-spacing:.07em;text-transform:uppercase;color:var(--gd);margin-bottom:7px}.private-preset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.private-preset{display:flex;align-items:center;gap:7px;min-width:0;min-height:50px;padding:5px 6px;text-align:left;font:500 11px Oswald,sans-serif;letter-spacing:.03em}.private-preset.on{border-color:var(--gd);color:var(--gd);background:#242216}.private-preset__icon{position:relative;display:block;flex:0 0 30px;width:30px;height:38px;overflow:visible}.private-preset__icon .pin-wrap{transform:scale(.82);transform-origin:left top}.private-preset__icon .pin-caption{max-width:90px;font-size:8px;padding:1px 3px;top:24px}.private-preset__name{min-width:0;line-height:1.2}.private-design-state{margin-top:7px;color:var(--mu);font-size:11px}.private-design-preview{display:flex;align-items:center;gap:12px;min-height:62px;margin-top:8px;padding:7px 9px;border:1px dashed #454638;border-radius:8px;background:linear-gradient(110deg,#1b1d17,#12140f)}.private-design-preview__icon{position:relative;display:block;flex:0 0 40px;width:40px;height:46px;overflow:visible}.private-design-preview__icon .pin-wrap{transform:scale(1.08);transform-origin:left top}.private-design-preview__text{min-width:0;display:flex;flex-direction:column;gap:3px}.private-design-preview__text b{font:600 12px Oswald,sans-serif;letter-spacing:.04em;overflow-wrap:anywhere}.private-design-preview__text small{color:var(--mu);font-size:10px}.private-design .fi{margin-top:8px}";
+  document.head.appendChild(privateDesignStyle);
 
   function authApi() { return window.LLAuth || null; }
   function isMasterNow() { return typeof isMaster === "function" && isMaster(); }
@@ -147,6 +158,37 @@
     }).join("") : '<div style="color:var(--mu)">Пока нет личных меток.</div>';
     panel.insertAdjacentHTML("beforeend", '<div data-private-editor-section><h3>Личная метка</h3><div class="private-form-note">Она появится только у выбранных аккаунтов и у мастеров. Нажмите по карте, чтобы сохранить метку сразу.</div><label class="fi">Заголовок<input data-private-field="title" maxlength="100" value="' + esc(privateForm.title) + '"></label><label class="fi">Значок<select data-private-field="symbol">' + symbols + '</select></label><label class="fi">Цвет<input type="color" data-private-field="color" value="' + esc(privateForm.color) + '"></label><label class="fi">Короткая подпись на карте<input data-private-field="caption" maxlength="48" value="' + esc(privateForm.caption) + '" placeholder="Необязательно"></label><label class="fi">Описание<textarea data-private-field="description" rows="2" maxlength="1000">' + esc(privateForm.description) + '</textarea></label><b>Кому показывать</b><div class="audience-list" data-player-picker="private">' + playerRowsHtml("private", privateForm.visibleTo) + '</div><h3>Ваши личные метки</h3><div>' + marks + '</div></div>');
   }
+
+  function privateDesignMarkup() {
+    return '<div class="private-design"><div class="private-design-title">Шаблоны оформления</div><div class="private-preset-grid">' + privatePresets.map(function (preset) {
+      var preview = privateIcon({ symbol: preset.symbol, color: preset.color, caption: preset.caption }).options.html;
+      return '<button type="button" class="private-preset" data-private-preset="' + preset.id + '"><span class="private-preset__icon">' + preview + '</span><span class="private-preset__name">' + esc(preset.name) + '</span></button>';
+    }).join("") + '</div><div class="private-design-state" data-private-design-state></div><div class="private-design-preview" data-private-preview></div></div>';
+  }
+
+  function updatePrivateDesignPreview() {
+    var preview = document.querySelector("[data-private-preview]");
+    var state = document.querySelector("[data-private-design-state]");
+    if (!preview) return;
+    preview.innerHTML = '<span class="private-design-preview__icon">' + privateIcon(privateForm).options.html + '</span><span class="private-design-preview__text"><b>' + esc(privateForm.title || "Личная метка") + '</b><small>' + (privateForm.caption ? "На карте: " + esc(privateForm.caption) : "Без короткой подписи на карте") + '</small></span>';
+    document.querySelectorAll("[data-private-preset]").forEach(function (button) {
+      button.classList.toggle("on", !!privateForm.preset && button.getAttribute("data-private-preset") === privateForm.preset);
+    });
+    if (state) {
+      var preset = privatePresets.filter(function (item) { return item.id === privateForm.preset; })[0];
+      state.textContent = preset ? "Выбран шаблон: " + preset.name + ". Значок, цвет и подпись можно изменить ниже." : "Свой вариант оформления. Выбранные значок, цвет и подпись сохранятся при создании метки.";
+    }
+  }
+
+  var basePrivateEditorForm = drawPrivateEditorForm;
+  drawPrivateEditorForm = function () {
+    basePrivateEditorForm();
+    var section = document.querySelector("[data-private-editor-section]");
+    if (!section) return;
+    var firstField = section.querySelector("[data-private-field=title]");
+    if (firstField && !section.querySelector("[data-private-preview]")) firstField.insertAdjacentHTML("beforebegin", privateDesignMarkup());
+    updatePrivateDesignPreview();
+  };
 
   function renderMasterWallComposer() {
     if (!isMasterNow()) return;
@@ -305,17 +347,40 @@
     if (button && button.getAttribute("data-at") === "Игроки") setTimeout(function () { loadMasterDirectory(false); }, 0);
   });
 
+  document.getElementById("ed2").addEventListener("click", function (event) {
+    var button = event.target.closest && event.target.closest("[data-private-preset]");
+    if (!button || TOOL !== "priv") return;
+    event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
+    var preset = privatePresets.filter(function (item) { return item.id === button.getAttribute("data-private-preset"); })[0];
+    if (!preset) return;
+    privateForm.preset = preset.id;
+    privateForm.symbol = preset.symbol;
+    privateForm.color = preset.color;
+    privateForm.caption = preset.caption;
+    drawPrivateEditorForm();
+  }, true);
+
   document.addEventListener("input", function (event) {
     var target = event.target;
     if (target.id === "pt-color") PT_COLOR = target.value;
     if (target.id === "pt-caption") PT_CAPTION = target.value;
-    if (target.hasAttribute("data-private-field")) privateForm[target.getAttribute("data-private-field")] = target.value;
+    if (target.hasAttribute("data-private-field")) {
+      var field = target.getAttribute("data-private-field");
+      privateForm[field] = target.value;
+      if (field === "symbol" || field === "color" || field === "caption") privateForm.preset = "";
+      updatePrivateDesignPreview();
+    }
   });
   document.addEventListener("change", function (event) {
     var target = event.target;
     if (target.id === "pt-color") PT_COLOR = target.value;
     if (target.id === "pt-caption") PT_CAPTION = target.value;
-    if (target.hasAttribute("data-private-field")) privateForm[target.getAttribute("data-private-field")] = target.value;
+    if (target.hasAttribute("data-private-field")) {
+      var field = target.getAttribute("data-private-field");
+      privateForm[field] = target.value;
+      if (field === "symbol" || field === "color" || field === "caption") privateForm.preset = "";
+      updatePrivateDesignPreview();
+    }
     if (target.matches("[data-player-recipient=private]")) {
       privateForm.visibleTo = Array.from(document.querySelectorAll('[data-player-recipient="private"]:checked')).map(function (input) { return input.value; });
     }
