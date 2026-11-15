@@ -1,7 +1,7 @@
 let initializeApp, getAuth, GoogleAuthProvider, onAuthStateChanged;
 let signInWithPopup, signInWithRedirect, getRedirectResult, signOut;
 let browserLocalPersistence, browserSessionPersistence, setPersistence;
-let getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs;
+let getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs;
 let query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch, runTransaction;
 
 const state = { ready: false, configured: false, user: null, profile: null, application: null, error: "", notice: "" };
@@ -12,9 +12,15 @@ let stopProfile = null;
 let stopApplication = null;
 let stopPosts = null;
 let stopOrders = null;
+let stopBroadcasts = null;
+let stopPrivateMarkers = null;
 let stopGameClock = null;
 let stopWorld = null;
 let wallEntries = [];
+let postEntries = [];
+let orderEntries = [];
+let broadcastEntries = [];
+let privateMapMarkers = [];
 const DEFAULT_GAME_CLOCK = { turn: 1, year: 1, month: 3, day: 1, advanceValue: 7, advanceUnit: "days" };
 
 function daysInMonth(year, month) {
@@ -124,31 +130,72 @@ function clearListeners() {
   if (stopApplication) stopApplication();
   if (stopPosts) stopPosts();
   if (stopOrders) stopOrders();
+  if (stopBroadcasts) stopBroadcasts();
+  if (stopPrivateMarkers) stopPrivateMarkers();
   stopProfile = stopApplication = null;
-  stopPosts = stopOrders = null;
+  stopPosts = stopOrders = stopBroadcasts = stopPrivateMarkers = null;
+  postEntries = orderEntries = broadcastEntries = privateMapMarkers = [];
   wallEntries = [];
   window.dispatchEvent(new CustomEvent("ll:wall-data", { detail: wallEntries }));
+  window.dispatchEvent(new CustomEvent("ll:private-markers", { detail: privateMapMarkers }));
+}
+
+function dispatchWallEntries() {
+  wallEntries = postEntries.concat(orderEntries, broadcastEntries);
+  window.dispatchEvent(new CustomEvent("ll:wall-data", { detail: wallEntries }));
+}
+
+function startPrivateMarkerListener() {
+  if (stopPrivateMarkers) stopPrivateMarkers();
+  stopPrivateMarkers = null;
+  privateMapMarkers = [];
+  if (!db || !state.user) {
+    window.dispatchEvent(new CustomEvent("ll:private-markers", { detail: privateMapMarkers }));
+    return;
+  }
+  const master = ["master", "owner"].includes(state.profile?.role);
+  const markerQuery = master
+    ? query(collection(db, "privateMapMarkers"), limit(200))
+    : query(collection(db, "privateMapMarkers"), where("visibleTo", "array-contains", state.user.uid), limit(200));
+  stopPrivateMarkers = onSnapshot(markerQuery, (snap) => {
+    privateMapMarkers = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    window.dispatchEvent(new CustomEvent("ll:private-markers", { detail: privateMapMarkers }));
+  }, (error) => { state.error = error.message; publish(); });
 }
 
 function startWallListeners() {
   if (!db) return;
   if (stopPosts) stopPosts();
   if (stopOrders) stopOrders();
+  if (stopBroadcasts) stopBroadcasts();
+  postEntries = orderEntries = broadcastEntries = [];
   stopPosts = onSnapshot(query(collection(db, "posts"), orderBy("createdAt", "desc"), limit(100)), (snap) => {
-    const entries = snap.docs.map((d) => ({ id: d.id, cloud: true, kind: "post", ...d.data() }));
-    wallEntries = wallEntries.filter((x) => x.kind === "order").concat(entries);
-    window.dispatchEvent(new CustomEvent("ll:wall-data", { detail: wallEntries }));
+    postEntries = snap.docs.map((d) => ({ id: d.id, cloud: true, kind: "post", ...d.data() }));
+    dispatchWallEntries();
   }, (error) => { state.error = error.message; publish(); });
   if (state.user) {
     const orderQuery = ["master", "owner"].includes(state.profile?.role)
       ? query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(100))
       : query(collection(db, "orders"), where("authorUid", "==", state.user.uid), limit(100));
     stopOrders = onSnapshot(orderQuery, (snap) => {
-      const entries = snap.docs.map((d) => ({ id: d.id, cloud: true, kind: "order", ...d.data() }));
-      wallEntries = wallEntries.filter((x) => x.kind !== "order").concat(entries);
-      window.dispatchEvent(new CustomEvent("ll:wall-data", { detail: wallEntries }));
+      orderEntries = snap.docs.map((d) => ({ id: d.id, cloud: true, kind: "order", ...d.data() }));
+      dispatchWallEntries();
     }, (error) => { state.error = error.message; publish(); });
   }
+  const master = ["master", "owner"].includes(state.profile?.role);
+  const broadcastQueries = master
+    ? [query(collection(db, "broadcasts"), limit(100))]
+    : [query(collection(db, "broadcasts"), where("audience", "==", "all"), limit(100))];
+  if (!master && state.user) broadcastQueries.push(query(collection(db, "broadcasts"), where("visibleTo", "array-contains", state.user.uid), limit(100)));
+  const broadcastStreams = broadcastQueries.map(() => new Map());
+  const broadcastStops = broadcastQueries.map((broadcastQuery, streamIndex) => onSnapshot(broadcastQuery, (snap) => {
+    const rows = broadcastStreams[streamIndex];
+    rows.clear();
+    snap.docs.forEach((d) => rows.set(d.id, { id: d.id, cloud: true, kind: "broadcast", ...d.data() }));
+    broadcastEntries = Array.from(new Map(broadcastStreams.flatMap((stream) => Array.from(stream.entries()))).values());
+    dispatchWallEntries();
+  }, (error) => { state.error = error.message; publish(); }));
+  stopBroadcasts = () => broadcastStops.forEach((stop) => stop());
 }
 
 const api = {
@@ -282,6 +329,43 @@ const api = {
       status: "Ожидает вердикта", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
     });
   },
+  async createBroadcast(post) {
+    if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) throw new Error("Создавать публикации может только мастер.");
+    const text = String(post?.text || "").trim();
+    const senderName = String(post?.senderName || "").trim();
+    const channel = String(post?.channel || "События").trim();
+    const audience = post?.audience === "selected" ? "selected" : "all";
+    const visibleTo = Array.isArray(post?.visibleTo) ? Array.from(new Set(post.visibleTo.map(String).filter(Boolean))).slice(0, 100) : [];
+    if (!text) throw new Error("Добавьте текст публикации.");
+    if (!senderName) throw new Error("Укажите, от чьего лица публикуется запись.");
+    if (audience === "selected" && !visibleTo.length) throw new Error("Выберите хотя бы одного игрока.");
+    await setDoc(doc(collection(db, "broadcasts")), {
+      authorUid: state.user.uid, senderName, channel, text, imageUrl: String(post?.imageUrl || ""),
+      audience, visibleTo: audience === "all" ? [] : visibleTo,
+      status: "Событие", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+    });
+  },
+  privateMarkers() { return privateMapMarkers.slice(); },
+  async createPrivateMarker(marker) {
+    if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) throw new Error("Создавать личные метки может только мастер.");
+    const visibleTo = Array.isArray(marker?.visibleTo) ? Array.from(new Set(marker.visibleTo.map(String).filter(Boolean))).slice(0, 100) : [];
+    const x = Number(marker?.x), y = Number(marker?.y);
+    const color = /^#[0-9a-f]{6}$/i.test(String(marker?.color || "")) ? marker.color : "#e2b94a";
+    if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 2000 || y < 0 || y > 2000) throw new Error("Не удалось определить точку на карте.");
+    if (!visibleTo.length) throw new Error("Выберите игроков, которым будет видна метка.");
+    await setDoc(doc(collection(db, "privateMapMarkers")), {
+      x, y, symbol: String(marker?.symbol || "post").slice(0, 32),
+      title: String(marker?.title || "Личная метка").trim().slice(0, 100),
+      caption: String(marker?.caption || "").trim().slice(0, 48),
+      description: String(marker?.description || "").trim().slice(0, 1000),
+      color, visibleTo, createdBy: state.user.uid,
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+    });
+  },
+  async deletePrivateMarker(id) {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Удалять личные метки может только мастер.");
+    await deleteDoc(doc(db, "privateMapMarkers", id));
+  },
   async decideOrder(id, status, verdict) {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Нет прав мастера.");
     await updateDoc(doc(db, "orders", id), {
@@ -289,19 +373,21 @@ const api = {
       reviewedBy: state.user.uid, updatedAt: serverTimestamp()
     });
   },
-  async listComments(postId) {
+  async listComments(postId, collectionName = "posts") {
     if (!db) return [];
-    const snap = await getDocs(query(collection(db, "posts", postId, "comments"), orderBy("createdAt", "asc"), limit(100)));
+    const parent = collectionName === "broadcasts" ? "broadcasts" : "posts";
+    const snap = await getDocs(query(collection(db, parent, postId, "comments"), orderBy("createdAt", "asc"), limit(100)));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
-  async addComment(postId, text) {
+  async addComment(postId, text, collectionName = "posts") {
     if (!state.user || !db || (!(["master", "owner"].includes(state.profile?.role)) && state.profile?.status !== "active")) {
       throw new Error("Комментарии доступны после одобрения заявки мастером.");
     }
     const body = String(text || "").trim();
     if (!body) return;
-    await setDoc(doc(collection(db, "posts", postId, "comments")), {
-      authorUid: state.user.uid, displayName: state.application?.callSign || "Игрок",
+    const parent = collectionName === "broadcasts" ? "broadcasts" : "posts";
+    await setDoc(doc(collection(db, parent, postId, "comments")), {
+      authorUid: state.user.uid, displayName: ["master", "owner"].includes(state.profile?.role) ? "Мастер проекта" : (state.application?.callSign || "Игрок"),
       text: body, createdAt: serverTimestamp()
     });
   },
@@ -344,9 +430,21 @@ const api = {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
   async listUsers() {
-    if (!db || state.profile?.role !== "owner") throw new Error("Управлять ролями может только создатель проекта.");
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Список игроков доступен только мастерам.");
     const snap = await getDocs(query(collection(db, "users"), orderBy("createdAt", "desc"), limit(200)));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+  async listMasterNotes() {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Мастерские заметки доступны только мастерам.");
+    const snap = await getDocs(query(collection(db, "masterNotes"), limit(200)));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+  async saveMasterNote(uid, alias) {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Менять мастерские имена может только мастер.");
+    await setDoc(doc(db, "masterNotes", String(uid)), {
+      uid: String(uid), alias: String(alias || "").trim().slice(0, 80),
+      updatedBy: state.user.uid, updatedAt: serverTimestamp()
+    });
   },
   async setUserRole(uid, role) {
     if (!db || state.profile?.role !== "owner" || !["player", "master"].includes(role)) {
@@ -375,7 +473,7 @@ if (!isUsableConfig(config)) {
     ]);
     ({ initializeApp } = appSdk);
     ({ getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, browserLocalPersistence, browserSessionPersistence, setPersistence } = authSdk);
-    ({ getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch, runTransaction } = firestoreSdk);
+    ({ getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch, runTransaction } = firestoreSdk);
     const app = initializeApp(config);
     auth = getAuth(app);
     try {
@@ -406,6 +504,7 @@ if (!isUsableConfig(config)) {
         stopProfile = onSnapshot(doc(db, "users", user.uid), (snap) => {
           state.profile = snap.exists() ? snap.data() : null;
           startWallListeners();
+          startPrivateMarkerListener();
           publish();
         }, (error) => { state.error = error.message; publish(); });
         stopApplication = onSnapshot(doc(db, "applications", user.uid), (snap) => {
