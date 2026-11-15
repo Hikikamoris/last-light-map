@@ -1,11 +1,13 @@
 let initializeApp, getAuth, GoogleAuthProvider, onAuthStateChanged;
 let signInWithPopup, signInWithRedirect, getRedirectResult, signOut;
+let browserLocalPersistence, browserSessionPersistence, setPersistence;
 let getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs;
 let query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch, runTransaction;
 
-const state = { ready: false, configured: false, user: null, profile: null, application: null, error: "" };
+const state = { ready: false, configured: false, user: null, profile: null, application: null, error: "", notice: "" };
 let auth = null;
 let db = null;
+let authPersistence = null;
 let stopProfile = null;
 let stopApplication = null;
 let stopPosts = null;
@@ -126,6 +128,7 @@ const api = {
   get state() { return { ...state }; },
   async signIn() {
     if (!auth) throw new Error("Google-вход ещё не подключён: сначала нужен Firebase-проект.");
+    if (authPersistence) await setPersistence(auth, authPersistence);
     const provider = new GoogleAuthProvider();
     provider.setCustomParameters({ prompt: "select_account" });
     try { await signInWithPopup(auth, provider); }
@@ -326,10 +329,18 @@ if (!isUsableConfig(config)) {
       import("https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js")
     ]);
     ({ initializeApp } = appSdk);
-    ({ getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut } = authSdk);
+    ({ getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, browserLocalPersistence, browserSessionPersistence, setPersistence } = authSdk);
     ({ getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch, runTransaction } = firestoreSdk);
     const app = initializeApp(config);
     auth = getAuth(app);
+    try {
+      await setPersistence(auth, browserLocalPersistence);
+      authPersistence = browserLocalPersistence;
+    } catch (error) {
+      authPersistence = browserSessionPersistence;
+      state.notice = "Этот браузер не разрешает сохранять вход после закрытия вкладки. В обычном окне браузера разрешите сохранение данных сайта; сейчас вход сохранится только до закрытия вкладки.";
+      await setPersistence(auth, browserSessionPersistence);
+    }
     db = getFirestore(app);
     state.configured = true;
     watchGameClock();
