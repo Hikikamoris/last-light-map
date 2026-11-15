@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function own(uid) { return signedIn() && request.auth.uid == uid; }
+    function userPath(uid) { return /databases/$(database)/documents/users/$(uid); }
+    function applicationPath(uid) { return /databases/$(database)/documents/applications/$(uid); }
+    function hasProfile() { return signedIn() && exists(userPath(request.auth.uid)); }
+    function role() { return get(userPath(request.auth.uid)).data.role; }
+    function isMaster() { return hasProfile() && role() in ['master', 'owner']; }
+    function isOwner() { return hasProfile() && role() == 'owner'; }
+    function isActivePlayer() {
+      return hasProfile() && role() == 'player' &&
+        get(userPath(request.auth.uid)).data.status == 'active';
+    }
+
+    match /users/{uid} {
+      allow get: if own(uid) || isOwner();
+      allow list: if isOwner();
+      allow create: if own(uid) &&
+        request.resource.data.uid == uid &&
+        request.resource.data.role == 'player' &&
+        request.resource.data.status == 'visitor' &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'photoURL', 'email', 'role', 'status', 'createdAt', 'updatedAt'
+        ]);
+      allow update: if isOwner() || (isMaster() &&
+        request.resource.data.role == resource.data.role &&
+        (request.resource.data.status != 'active' ||
+          (existsAfter(applicationPath(uid)) && getAfter(applicationPath(uid)).data.status == 'approved')) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'squadId', 'updatedAt', 'updatedBy'
+        ])) || (own(uid) &&
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.status == resource.data.status &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'displayName', 'photoURL', 'updatedAt'
+        ]));
+      allow delete: if false;
+    }
+
+    match /applications/{uid} {
+      allow get: if own(uid) || isMaster();
+      allow list: if isMaster();
+      allow create: if own(uid) &&
+        request.resource.data.applicantUid == uid &&
+        request.resource.data.submittedBy == uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.squadName is string &&
+        request.resource.data.callSign is string &&
+        request.resource.data.members is list &&
+        request.resource.data.members.size() > 0 &&
+        request.resource.data.members.size() <= 8 &&
+        request.resource.data.keys().hasOnly([
+          'applicantUid', 'submittedBy', 'squadName', 'callSign', 'members',
+          'status', 'decisionReason', 'submittedAt', 'updatedAt'
+        ]) &&
+        get(userPath(uid)).data.role == 'player' &&
+        get(userPath(uid)).data.status in ['visitor'];
+      allow update: if (isMaster() &&
+        request.resource.data.applicantUid == resource.data.applicantUid &&
+        request.resource.data.status in ['approved', 'rejected'] &&
+        request.resource.data.reviewedBy == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'decisionReason', 'reviewedBy', 'reviewedAt', 'updatedAt'
+        ])) || (own(uid) &&
+        resource.data.status == 'rejected' &&
+        request.resource.data.applicantUid == uid &&
+        request.resource.data.submittedBy == uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'squadName', 'callSign', 'members', 'status', 'submittedAt', 'updatedAt', 'submittedBy', 'decisionReason'
+        ]));
+      allow delete: if isMaster();
+    }
+
+    match /public/{document} {
+      allow read: if true;
+      allow write: if isMaster();
+    }
+
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isMaster();
+      allow update, delete: if isMaster();
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if (isActivePlayer() || isMaster()) &&
+          request.resource.data.authorUid == request.auth.uid &&
+          request.resource.data.keys().hasOnly(['authorUid', 'displayName', 'text', 'createdAt']);
+        allow update, delete: if isMaster() ||
+          (isActivePlayer() && resource.data.authorUid == request.auth.uid);
+      }
+      match /reactions/{uid} {
+        allow read: if true;
+        allow create, update: if (isActivePlayer() || isMaster()) && own(uid) &&
+          request.resource.data.keys().hasOnly(['authorUid', 'value', 'updatedAt']) &&
+          request.resource.data.authorUid == request.auth.uid;
+        allow delete: if isActivePlayer() && own(uid);
+      }
+    }
+
+    match /orders/{orderId} {
+      allow read: if isMaster() || (signedIn() && resource.data.authorUid == request.auth.uid);
+      allow create: if isActivePlayer() &&
+        request.resource.data.authorUid == request.auth.uid &&
+        request.resource.data.status == 'Ожидает вердикта' &&
+        request.resource.data.squadId == request.auth.uid &&
+        request.resource.data.text is string &&
+        request.resource.data.keys().hasOnly([
+          'authorUid', 'authorName', 'squadId', 'squadName', 'text', 'imageUrl', 'status', 'createdAt', 'updatedAt'
+        ]);
+      allow update: if isMaster();
+      allow delete: if isMaster() || (isActivePlayer() && resource.data.authorUid == request.auth.uid);
+    }
+
+    match /journal/{entryId} {
+      allow read: if isMaster();
+      allow write: if false;
+    }
+  }
+}
