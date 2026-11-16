@@ -624,6 +624,9 @@
       var statusClass = status === "Принято" || status === "Событие" ? "ok" : status === "Отклонено" ? "no" : "";
       var audience = broadcast ? (isMasterNow() && p.audience === "selected" ? '<span class="st">Для выбранных</span>' : "") : "";
       var html = '<div class="card post"><div class="broadcast-head"><b>' + esc(name) + '</b>' + (broadcast ? '<span class="broadcast-channel">' + esc(p.channel || "События") + "</span>" : "") + '<span style="color:var(--mu)">' + esc(created) + '</span><span class="sp"></span>' + audience + '<span class="st ' + statusClass + '">' + esc(status) + "</span></div>" + (p.imageUrl ? '<img class="pim" src="' + esc(p.imageUrl) + '" alt="">' : "") + '<div class="pt">' + esc(p.text || "") + "</div>";
+      var wallUid = window.LLAuthState && window.LLAuthState.user && window.LLAuthState.user.uid;
+      var canManagePost = isMasterNow() || (p.kind === "order" && wallUid && p.authorUid === wallUid);
+      if (canManagePost) html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"><button data-wall-edit="' + esc(p.id) + '">Изменить</button><button data-wall-delete="' + esc(p.id) + '" data-wall-kind="' + esc(p.kind) + '">Удалить</button><div id="wall-edit-form-' + esc(p.id) + '" hidden style="width:100%;margin-top:6px"><textarea data-wall-text="' + esc(p.id) + '" rows="4" maxlength="12000" style="width:100%">' + esc(p.text || "") + '</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="pr" data-wall-save="' + esc(p.id) + '" data-wall-kind="' + esc(p.kind) + '">Сохранить</button><button data-wall-cancel="' + esc(p.id) + '">Отмена</button></div></div></div>';
       if ((broadcast || p.kind === "post") && (isActivePlayerNow() || isMasterNow())) {
         html += '<div class="rx">' + (!broadcast ? '<button data-cloud-react="like" data-post="' + esc(p.id) + '">Нравится</button>' : "") + '<button data-cloud-comments="' + esc(p.id) + '" data-collection="' + (broadcast ? "broadcasts" : "posts") + '" style="color:var(--mu)">Ответить / комментарии</button></div><div id="comments-' + esc(p.id) + '"></div>';
       }
@@ -701,6 +704,35 @@
       text: document.getElementById("broadcast-text").value
     }).then(function () { if (window.LLWallDraft) window.LLWallDraft.clear("broadcast", "main"); rWall(); toast("Запись опубликована.", "ok"); })
       .catch(function (error) { toast(error.message || "Не удалось опубликовать запись.", "error", 9000); });
+  });
+
+  document.getElementById("wall").addEventListener("click", function (event) {
+    var target = event.target;
+    var editButton = target.closest && target.closest("[data-wall-edit]");
+    var saveButton = target.closest && target.closest("[data-wall-save]");
+    var cancelButton = target.closest && target.closest("[data-wall-cancel]");
+    var deleteButton = target.closest && target.closest("[data-wall-delete]");
+    if (editButton) {
+      var editId = editButton.getAttribute("data-wall-edit"), form = document.getElementById("wall-edit-form-" + editId);
+      if (form) { form.hidden = false; var field = form.querySelector("textarea"); if (field) field.focus(); }
+      return;
+    }
+    if (cancelButton) {
+      var cancelForm = document.getElementById("wall-edit-form-" + cancelButton.getAttribute("data-wall-cancel"));
+      if (cancelForm) cancelForm.hidden = true;
+      return;
+    }
+    if (saveButton) {
+      var saveId = saveButton.getAttribute("data-wall-save"), saveForm = document.getElementById("wall-edit-form-" + saveId), saveField = saveForm && saveForm.querySelector("textarea");
+      if (!saveField) return;
+      authApi().updateWallEntry(saveId, saveButton.getAttribute("data-wall-kind"), saveField.value).then(function () { toast("Пост обновлён.", "ok"); }).catch(function (error) { toast(error.message || "Не удалось изменить пост.", "error"); });
+      return;
+    }
+    if (deleteButton) {
+      var deleteId = deleteButton.getAttribute("data-wall-delete"), deleteKind = deleteButton.getAttribute("data-wall-kind");
+      if (!window.confirm("Удалить эту запись со Стены? Это действие нельзя отменить.")) return;
+      authApi().deleteWallEntry(deleteId, deleteKind).then(function () { toast("Пост удалён.", "ok"); }).catch(function (error) { toast(error.message || "Не удалось удалить пост.", "error"); });
+    }
   });
 
   function refreshBroadcastComments(id, target) {
