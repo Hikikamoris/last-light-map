@@ -592,7 +592,8 @@
     var card = form.closest(".card");
     if (!card) return;
     card.setAttribute("data-broadcast-composer", "true");
-    card.innerHTML = '<h3>Новая запись на Стену</h3><p style="color:var(--mu);margin:4px 0 10px">Выберите канал, автора и аудиторию. Игроки смогут отвечать в комментариях под записью.</p><div class="grid"><label class="fi">Канал<select id="broadcast-channel"><option>Радиопереговоры</option><option>События</option><option>Слухи</option><option>Объявления</option><option value="custom">Другое</option></select></label><label class="fi">От чьего лица<input id="broadcast-sender" maxlength="80" value="Диспетчер" placeholder="Например: Радио 7, очевидец"></label></div><label class="fi" id="broadcast-custom-channel-wrap" style="display:none">Название канала<input id="broadcast-custom-channel" maxlength="40" placeholder="Например: Связь отряда"></label><label class="fi">Кто увидит<select id="broadcast-audience"><option value="all">Все игроки</option><option value="selected">Только выбранные аккаунты</option></select></label><div id="broadcast-target-wrap" style="display:none"><b>Выберите игроков</b><div class="audience-list" data-player-picker="broadcast">Загружаю аккаунты…</div></div><textarea id="broadcast-text" rows="4" maxlength="12000" style="width:100%;margin:8px 0" placeholder="Текст радиопереговоров, события или объявления…"></textarea><button class="pr" data-broadcast-publish>Опубликовать запись</button><label class="fi" style="margin-top:14px">Показать<select id="wf"><option value="all">Все записи</option><option value="Ожидает вердикта">Ожидают вердикта</option><option value="Принято">Принятые</option><option value="Отклонено">Отклонённые</option><option value="Событие">События и радиопереговоры</option></select></label>';
+    card.innerHTML = '<h3>Новая запись на Стену</h3><p style="color:var(--mu);margin:4px 0 10px">Выберите канал, автора и аудиторию. Игроки смогут отвечать в комментариях под записью.</p><div class="grid"><label class="fi">Канал<select id="broadcast-channel"><option>Радиопереговоры</option><option>События</option><option>Слухи</option><option>Объявления</option><option value="custom">Другое</option></select></label><label class="fi">От чьего лица<input id="broadcast-sender" maxlength="80" value="Диспетчер" placeholder="Например: Радио 7, очевидец"></label></div><label class="fi" id="broadcast-custom-channel-wrap" style="display:none">Название канала<input id="broadcast-custom-channel" maxlength="40" placeholder="Например: Связь отряда"></label><label class="fi">Кто увидит<select id="broadcast-audience"><option value="all">Все игроки</option><option value="selected">Только выбранные аккаунты</option></select></label><div id="broadcast-target-wrap" style="display:none"><b>Выберите игроков</b><div class="audience-list" data-player-picker="broadcast">Загружаю аккаунты…</div></div><textarea id="broadcast-text" rows="4" maxlength="12000" style="width:100%;margin:8px 0" placeholder="Текст радиопереговоров, события или объявления…"></textarea><div id="broadcast-draft-status" style="margin:-4px 0 8px;color:var(--mu);font-size:11px">Текст черновика сохраняется автоматически в этом браузере.</div><button class="pr" data-broadcast-publish>Опубликовать запись</button><label class="fi" style="margin-top:14px">Показать<select id="wf"><option value="all">Все записи</option><option value="Ожидает вердикта">Ожидают вердикта</option><option value="Принято">Принятые</option><option value="Отклонено">Отклонённые</option><option value="Событие">События и радиопереговоры</option></select></label>';
+    if (window.LLWallDraft) window.LLWallDraft.bind(document.getElementById("broadcast-text"), "broadcast", "main", "broadcast-draft-status");
     var filter = document.getElementById("wf");
     if (filter) { filter.value = wf; filter.onchange = function () { wf = this.value; renderWall(); }; }
     renderChannelFilter();
@@ -626,10 +627,11 @@
       if ((broadcast || p.kind === "post") && (isActivePlayerNow() || isMasterNow())) {
         html += '<div class="rx">' + (!broadcast ? '<button data-cloud-react="like" data-post="' + esc(p.id) + '">Нравится</button>' : "") + '<button data-cloud-comments="' + esc(p.id) + '" data-collection="' + (broadcast ? "broadcasts" : "posts") + '" style="color:var(--mu)">Ответить / комментарии</button></div><div id="comments-' + esc(p.id) + '"></div>';
       }
-      if (isMasterNow() && p.kind === "order" && status === "Ожидает вердикта") html += '<div style="margin-top:10px"><button class="pr" data-cloud-order="Принято" data-post="' + esc(p.id) + '">Принять</button> <button data-cloud-order="Отклонено" data-post="' + esc(p.id) + '">Отклонить</button></div>';
+      if (isMasterNow() && p.kind === "order" && status === "Ожидает вердикта") html += '<div style="margin-top:10px"><textarea id="wall-verdict-' + esc(p.id) + '" rows="2" style="width:100%" placeholder="Ваш вердикт (необязательно)…"></textarea><button class="pr" data-cloud-order="Принято" data-post="' + esc(p.id) + '">Принять</button> <button data-cloud-order="Отклонено" data-post="' + esc(p.id) + '">Отклонить</button></div>';
       if (p.verdict) html += '<div class="vd"><b>Вердикт мастера</b><br>' + esc(p.verdict) + '</div>';
       return html + "</div>";
     }).join("");
+    if (window.LLWallDraft) entries.forEach(function (p) { var verdict = document.getElementById("wall-verdict-" + p.id); if (verdict) window.LLWallDraft.bind(verdict, "wall-verdict", p.id); });
   }
 
   rWall = function () { baseWall(); renderMasterWallComposer(); renderChannelFilter(); renderWall(); };
@@ -697,7 +699,7 @@
       audience: audience,
       visibleTo: audience === "selected" ? selected : [],
       text: document.getElementById("broadcast-text").value
-    }).then(function () { rWall(); toast("Запись опубликована.", "ok"); })
+    }).then(function () { if (window.LLWallDraft) window.LLWallDraft.clear("broadcast", "main"); rWall(); toast("Запись опубликована.", "ok"); })
       .catch(function (error) { toast(error.message || "Не удалось опубликовать запись.", "error", 9000); });
   });
 
@@ -707,6 +709,7 @@
       target.innerHTML = rows.map(function (comment) {
         return '<div class="row"><span><b>' + esc(comment.displayName || "Игрок") + '</b> ' + esc(comment.text || "") + "</span></div>";
       }).join("") + '<input id="comment-input-' + esc(id) + '" placeholder="Ответить…" style="width:calc(100% - 110px);margin-top:8px"><button data-cloud-comment-send="' + esc(id) + '" data-collection="broadcasts">Отправить</button>';
+      if (window.LLWallDraft) window.LLWallDraft.bind(document.getElementById("comment-input-" + id), "comment", id);
     }).catch(function (error) { if (target.isConnected) target.textContent = error.message || "Не удалось загрузить ответы."; });
   }
   document.getElementById("wall").addEventListener("click", function (event) {
@@ -723,7 +726,7 @@
       return;
     }
     var sendId = sendButton.getAttribute("data-cloud-comment-send"), input = document.getElementById("comment-input-" + sendId), commentTarget = document.getElementById("comments-" + sendId);
-    authApi().addComment(sendId, input ? input.value : "", "broadcasts").then(function () { refreshBroadcastComments(sendId, commentTarget); }).catch(function (error) { toast(error.message || "Не удалось отправить ответ.", "error"); });
+    authApi().addComment(sendId, input ? input.value : "", "broadcasts").then(function () { if (window.LLWallDraft) window.LLWallDraft.clear("comment", sendId); refreshBroadcastComments(sendId, commentTarget); }).catch(function (error) { toast(error.message || "Не удалось отправить ответ.", "error"); });
   }, true);
 
   document.getElementById("adm").addEventListener("click", function (event) {
@@ -936,3 +939,4 @@
   drawLeg();
   if (location.hash === "#marker-studio") setTimeout(renderMarkerStudio, 0);
 }());
+
