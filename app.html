@@ -151,7 +151,7 @@ nav a,.tabs button{font-size:13px}.st{font-size:11px}button.pr:hover{filter:brig
  .post{padding:14px}.rx button{min-height:40px}
 }
 @media(max-width:420px){.logo{font-size:15px}.etop h2{font-size:14px}.etop .save-status{white-space:normal;max-width:100%}.wrap{padding:10px}.card{padding:12px}}
-</style></head><body>
+</style><link rel="stylesheet" href="./mobile.css?v=20261117-mobile1"></head><body>
 <header>
  <div class="logo"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v3M14 3v3M7 9a5 5 0 0110 0v8H7zM9 21h6M12 11v4"/></svg><span>Last <b>Light</b></span></div>
  <nav id="nav"><a href="#map">Карта</a><a href="#wall">Стена</a><a href="#state">Отряд</a><a href="#rules">Правила и механики</a><a href="#editor" id="edlink" style="display:none">Редактор карты</a><a href="#marker-studio" id="markerlink" style="display:none">Редактор значков</a><a href="#admin" id="admlink" style="display:none"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg> Мастер</a></nav>
@@ -227,11 +227,11 @@ function me(){if(!LLAuthState.user)return null;if(isMaster())return D.squads.fil
 function updateSeasonMapVisuals(month){var m=Math.min(12,Math.max(1,Number(month)||3)),s=m>=3&&m<=5?0:m>=6&&m<=8?1:m>=9&&m<=11?2:3,key=['spring','summer','autumn','winter'][s];['map','emap'].forEach(function(id){var el=$(id);if(!el)return;el.classList.remove('season-spring','season-summer','season-autumn','season-winter');el.classList.add('season-'+key);el.setAttribute('data-season',key)})}
 function clock(){var g=GAME_CLOCK||legacyGameClock(),m=g.month,s=m>=3&&m<=5?0:m>=6&&m<=8?1:m>=9&&m<=11?2:3;updateSeasonMapVisuals(m);$('clock').textContent='Год '+g.year+' · Ход '+g.turn+' · '+g.day+' '+MONTHS[m-1]+' · '+SEASONS[s]}
 // навигация
-var V=['map','wall','state','rules','admin','editor','marker-studio'];
+var V=['map','wall','state','rules','admin','editor','marker-studio'];var mapViewInitialized=false;
 function go(){var h=(location.hash||'#map').slice(1);if(V.indexOf(h)<0||((h==='admin'||h==='editor'||h==='marker-studio')&&!isMaster()))h='map';if(h==='editor'&&currentView!=='editor')beginMapDraft();if(currentView==='editor'&&h!=='editor')endMapDraft();currentView=h;$('admlink').style.display=isMaster()?'inline-block':'none';$('edlink').style.display=isMaster()?'inline-block':'none';$('markerlink').style.display=isMaster()?'inline-block':'none';$('pop').classList.remove('on');
  V.forEach(function(v){$('v-'+v).classList.toggle('on',v===h)});
  Array.prototype.forEach.call($('nav').children,function(a){a.classList.toggle('on',a.getAttribute('href')==='#'+h)});
- if(h==='map')setTimeout(function(){map.invalidateSize()},50);
+ if(h==='map')setTimeout(function(){map.invalidateSize({pan:false});if(!mapViewInitialized){map.fitBounds(bd);if(window.matchMedia&&window.matchMedia('(max-width:700px)').matches)map.setZoom(Math.min(map.getZoom()+1,map.getMaxZoom()),{animate:false});mapViewInitialized=true}},50);
  if(h==='wall')rWall();if(h==='state')rState();if(h==='rules')rRules();if(h==='admin')rAdm();if(h==='editor')initEd();if(h==='marker-studio'&&window.renderMarkerStudio)window.renderMarkerStudio()}
 window.addEventListener('hashchange',go);
 // карта
@@ -261,7 +261,7 @@ function drawLeg(){var h='<h3 style="margin-bottom:8px">Легенда</h3><div 
  Object.keys(TYPES).forEach(function(k){h+='<label class="lg"><input type="checkbox" data-l="'+k+'" '+(map.hasLayer(groups[k])?'checked':'')+' style="width:auto"><span class="li t-'+k+'">'+ico(k,15)+'</span>'+TYPES[k][1]+'</label>'});
  $('leg').innerHTML=h}
 $('leg').addEventListener('change',function(e){var k=e.target.getAttribute('data-l');if(!k)return;e.target.checked?groups[k].addTo(map):map.removeLayer(groups[k])});
-$('b-leg').onclick=function(){var l=$('leg');l.style.display=l.style.display==='none'?'block':'none';this.classList.toggle('on')};
+$('b-leg').onclick=function(){var l=$('leg');var open=window.getComputedStyle(l).display==='none';l.style.display=open?'block':'none';this.classList.toggle('on',open)};if(window.matchMedia&&window.matchMedia('(max-width:700px)').matches){document.getElementById('leg').style.display='none';document.getElementById('b-leg').classList.remove('on')};
 
 document.addEventListener('click',function(e){var i=e.target.getAttribute&&e.target.getAttribute('data-del');
  if(i!==null&&i!==undefined){e.preventDefault();if(!isMaster())return;D.pts.splice(+i,1);save();map.closePopup();drawMap()}});
@@ -599,4 +599,4 @@ document.addEventListener('keydown',function(e){if(location.hash!=='#editor'||!E
 drawFeat();
 L.control.zoom({position:'bottomright',zoomInTitle:'Приблизить',zoomOutTitle:'Отдалить'}).addTo(map);
 clock();drawMap();drawLeg();go();
-</script><script src="./rp-social.js?v=20261117-slider-gold1"></script><script type="module" src="./firebase-auth.js?v=20261116"></script></body></html>
+</script><script src="./rp-social.js?v=20261117-mobile1"></script><script type="module" src="./firebase-auth.js?v=20261116"></script></body></html>
