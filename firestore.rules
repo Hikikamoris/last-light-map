@@ -180,8 +180,12 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly([
           'authorUid', 'authorName', 'squadId', 'squadName', 'text', 'imageUrl', 'status', 'createdAt', 'updatedAt'
         ]);
-      allow update: if isMaster();
-      allow delete: if isMaster() || (isActivePlayer() && resource.data.authorUid == request.auth.uid);
+      allow update: if isMaster() ||
+        (hasProfile() && role() == 'player' && resource.data.authorUid == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'updatedAt']) &&
+          request.resource.data.text is string && request.resource.data.text.size() > 0 &&
+          request.resource.data.text.size() <= 12000);
+      allow delete: if isMaster() || (hasProfile() && role() == 'player' && resource.data.authorUid == request.auth.uid);
     }
 
     match /journal/{entryId} {
@@ -190,3 +194,4 @@ service cloud.firestore {
     }
   }
 }
+
