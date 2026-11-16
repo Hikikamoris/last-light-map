@@ -31,11 +31,11 @@
 
   function normalizeStudioShape(shape) {
     if (!shape || typeof shape !== "object") return null;
-    var type = String(shape.t || ""), allowed = { c: 1, s: 1, l: 1, t: 1, d: 1, x: 1, L: 1, p: 1 };
+    var type = String(shape.t || ""), allowed = { c: 1, s: 1, l: 1, t: 1, d: 1, x: 1, L: 1, p: 1, e: 1 };
     if (!allowed[type]) return null;
     function coord(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))); }
     var out = { t: type, s: Math.max(1, Math.min(18, Math.round(Number(shape.s) || 4))), fill: !!shape.fill };
-    if (type === "p") {
+    if (type === "p" || type === "e") {
       if (!Array.isArray(shape.points) || shape.points.length < 2) return null;
       out.points = shape.points.slice(0, 240).map(function (point) { return { x: coord(point.x), y: coord(point.y) }; });
       return out.points.length >= 2 ? out : null;
@@ -70,10 +70,10 @@
     if (!Array.isArray(shapes) || shapes.length > 20) return null;
     function c2(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))).toString(36).padStart(2, "0"); }
     function c1(value) { return Math.max(1, Math.min(18, Math.round(Number(value) || 4))).toString(36); }
-    var paths = shapes.filter(function (shape) { return shape.t === "p"; });
+    var paths = shapes.filter(function (shape) { return shape.t === "p" || shape.t === "e"; });
     var pathBudget = 80, output = "";
     shapes.forEach(function (shape) {
-      if (shape.t === "p") {
+      if (shape.t === "p" || shape.t === "e") {
         var remainingPaths = paths.length;
         var maxPoints = Math.max(2, Math.floor(pathBudget / remainingPaths));
         var points = shape.points;
@@ -83,7 +83,7 @@
           points = reduced;
         }
         pathBudget -= points.length; paths.shift();
-        output += "p" + c1(shape.s) + points.length.toString(36).padStart(2, "0") + points.map(function (point) { return c2(point.x) + c2(point.y); }).join("");
+        output += shape.t + c1(shape.s) + points.length.toString(36).padStart(2, "0") + points.map(function (point) { return c2(point.x) + c2(point.y); }).join("");
         return;
       }
       if (shape.t === "L") { output += "L" + c2(shape.x1) + c2(shape.y1) + c2(shape.x2) + c2(shape.y2) + c1(shape.s); return; }
@@ -99,10 +99,10 @@
     function read1() { var value = parseInt(source.charAt(i), 36); i += 1; return value; }
     while (i < source.length && output.length <= 20) {
       var type = source.charAt(i++), item;
-      if (type === "p") {
+      if (type === "p" || type === "e") {
         var width = read1(), count = parseInt(source.slice(i, i + 2), 36); i += 2;
         if (!Number.isFinite(width) || !Number.isFinite(count) || count < 2 || count > 80 || i + count * 4 > source.length) return null;
-        item = { t: "p", s: width, fill: false, points: [] };
+        item = { t: type, s: width, fill: false, points: [] };
         for (var p = 0; p < count; p++) item.points.push({ x: read2(), y: read2() });
       } else if (type === "L") {
         item = { t: "L", x1: read2(), y1: read2(), x2: read2(), y2: read2(), s: read1(), fill: false };
@@ -174,9 +174,35 @@
     restoreStudioHistory(source.pop());
   }
 
+  function rotateStudioShape(shape, direction) {
+    if (!shape || shape.t === "e") return;
+    var radians = (direction < 0 ? -1 : 1) * Math.PI / 4;
+    if (shape.t === "L") {
+      var cx = (shape.x1 + shape.x2) / 2, cy = (shape.y1 + shape.y2) / 2;
+      [["x1", "y1"], ["x2", "y2"]].forEach(function (keys) {
+        var dx = shape[keys[0]] - cx, dy = shape[keys[1]] - cy;
+        shape[keys[0]] = Math.max(0, Math.min(100, cx + dx * Math.cos(radians) - dy * Math.sin(radians)));
+        shape[keys[1]] = Math.max(0, Math.min(100, cy + dx * Math.sin(radians) + dy * Math.cos(radians)));
+      });
+      return;
+    }
+    if (shape.t === "p") {
+      var minX = 100, minY = 100, maxX = 0, maxY = 0;
+      shape.points.forEach(function (point) { minX = Math.min(minX, point.x); minY = Math.min(minY, point.y); maxX = Math.max(maxX, point.x); maxY = Math.max(maxY, point.y); });
+      var centerX = (minX + maxX) / 2, centerY = (minY + maxY) / 2;
+      shape.points.forEach(function (point) {
+        var dx = point.x - centerX, dy = point.y - centerY;
+        point.x = Math.max(0, Math.min(100, centerX + dx * Math.cos(radians) - dy * Math.sin(radians)));
+        point.y = Math.max(0, Math.min(100, centerY + dx * Math.sin(radians) + dy * Math.cos(radians)));
+      });
+      return;
+    }
+    shape.r = ((Number(shape.r) || 0) + (direction < 0 ? 7 : 1)) % 8;
+  }
+
   function moveStudioShape(shape, dx, dy) {
     function shift(value) { return Math.max(3, Math.min(97, Math.round(value))); }
-    if (shape.t === "p") { shape.points.forEach(function (point) { point.x = shift(point.x + dx); point.y = shift(point.y + dy); }); return; }
+    if (shape.t === "p" || shape.t === "e") { shape.points.forEach(function (point) { point.x = shift(point.x + dx); point.y = shift(point.y + dy); }); return; }
     if (shape.t === "L") { shape.x1 = shift(shape.x1 + dx); shape.y1 = shift(shape.y1 + dy); shape.x2 = shift(shape.x2 + dx); shape.y2 = shift(shape.y2 + dy); return; }
     shape.x = shift(shape.x + dx); shape.y = shift(shape.y + dy);
   }
@@ -194,25 +220,55 @@
   }
 
   function studioShapeMarkup(shape, color, index, selected) {
+    if (shape.t === "e") return "";
     var x = Math.round(Number(shape.x) || 0), y = Math.round(Number(shape.y) || 0), s = Math.max(1, Math.min(22, Number(shape.s) || 4));
-    var width = shape.t === "p" || shape.t === "L" ? s : Math.max(1, s / 3);
+    var angle = (Number(shape.r) || 0) * 45, width = shape.t === "p" || shape.t === "L" ? s : Math.max(1, s / 3);
     var attrs = (index >= 0 ? 'data-studio-shape="' + index + '" ' : "") + 'fill="' + (shape.fill && shape.t !== "p" && shape.t !== "L" ? color : "none") + '" stroke="' + color + '" stroke-width="' + (selected ? Math.max(width, 4) : width) + '" stroke-linecap="round" stroke-linejoin="round"';
+    var transform = angle ? ' transform="rotate(' + angle + ' ' + x + ' ' + y + ')"' : "";
     if (shape.t === "c") return '<circle ' + attrs + ' cx="' + x + '" cy="' + y + '" r="' + s + '"></circle>';
-    if (shape.t === "s") return '<rect ' + attrs + ' x="' + (x - s) + '" y="' + (y - s) + '" width="' + (s * 2) + '" height="' + (s * 2) + '" rx="2"></rect>';
-    if (shape.t === "l") { var angle = (Number(shape.r) || 0) * 45, dx = Math.round(s * Math.cos(angle * Math.PI / 180)), dy = Math.round(s * Math.sin(angle * Math.PI / 180)); return '<line ' + attrs + ' x1="' + (x - dx) + '" y1="' + (y - dy) + '" x2="' + (x + dx) + '" y2="' + (y + dy) + '"></line>'; }
-    if (shape.t === "L") return '<line ' + attrs + ' x1="' + Math.round(shape.x1) + '" y1="' + Math.round(shape.y1) + '" x2="' + Math.round(shape.x2) + '" y2="' + Math.round(shape.y2) + '"></line>';
-    if (shape.t === "p") return '<path ' + attrs + ' d="' + shape.points.map(function (point, i) { return (i ? "L" : "M") + Math.round(point.x) + " " + Math.round(point.y); }).join(" ") + '"></path>';
-    if (shape.t === "t") return '<polygon ' + attrs + ' points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + (y + s) + ' ' + (x - s) + ',' + (y + s) + '" transform="rotate(' + ((Number(shape.r) || 0) * 45) + ' ' + x + ' ' + y + ')"></polygon>';
-    if (shape.t === "d") return '<polygon ' + attrs + ' points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + y + ' ' + x + ',' + (y + s) + ' ' + (x - s) + ',' + y + '"></polygon>';
-    return '<path ' + attrs + ' d="M' + (x - s) + ' ' + y + 'H' + (x + s) + 'M' + x + ' ' + (y - s) + 'V' + (y + s) + '"></path>';
+    if (shape.t === "s") return '<rect ' + attrs + ' x="' + (x - s) + '" y="' + (y - s) + '" width="' + (s * 2) + '" height="' + (s * 2) + '" rx="2"' + transform + '></rect>';
+    if (shape.t === "l") { var dx = Math.round(s * Math.cos(angle * Math.PI / 180)), dy = Math.round(s * Math.sin(angle * Math.PI / 180)); return '<line ' + attrs + ' x1="' + (x - dx) + '" y1="' + (y - dy) + '" x2="' + (x + dx) + '" y2="' + (y + dy) + '"></line>'; }
+    if (shape.t === "L") { var cx = (Number(shape.x1) + Number(shape.x2)) / 2, cy = (Number(shape.y1) + Number(shape.y2)) / 2; return '<line ' + attrs + ' x1="' + Math.round(shape.x1) + '" y1="' + Math.round(shape.y1) + '" x2="' + Math.round(shape.x2) + '" y2="' + Math.round(shape.y2) + '"' + (angle ? ' transform="rotate(' + angle + ' ' + cx + ' ' + cy + ')"' : "") + '></line>'; }
+    if (shape.t === "p") {
+      var minX = 100, minY = 100, maxX = 0, maxY = 0;
+      shape.points.forEach(function (point) { minX = Math.min(minX, point.x); minY = Math.min(minY, point.y); maxX = Math.max(maxX, point.x); maxY = Math.max(maxY, point.y); });
+      var pathTransform = angle ? ' transform="rotate(' + angle + ' ' + ((minX + maxX) / 2) + ' ' + ((minY + maxY) / 2) + ')"' : "";
+      return '<path ' + attrs + ' d="' + shape.points.map(function (point, i) { return (i ? "L" : "M") + Math.round(point.x) + " " + Math.round(point.y); }).join(" ") + '"' + pathTransform + '></path>';
+    }
+    if (shape.t === "t") return '<polygon ' + attrs + ' points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + (y + s) + ' ' + (x - s) + ',' + (y + s) + '"' + transform + '></polygon>';
+    if (shape.t === "d") return '<polygon ' + attrs + ' points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + y + ' ' + x + ',' + (y + s) + ' ' + (x - s) + ',' + y + '"' + transform + '></polygon>';
+    return '<path ' + attrs + ' d="M' + (x - s) + ' ' + y + 'H' + (x + s) + 'M' + x + ' ' + (y - s) + 'V' + (y + s) + '"' + transform + '></path>';
+  }
+
+  var studioMaskSequence = 0;
+  function studioShapesMarkup(shapes, color, selected) {
+    var output = "", solids = [], erasers = [], sequence = ++studioMaskSequence;
+    function flush() {
+      if (!solids.length) { erasers = []; return; }
+      var content = solids.map(function (item) { return studioShapeMarkup(item.shape, color, item.index, item.index === selected); }).join("");
+      if (erasers.length) {
+        var id = "ll-erase-" + sequence + "-" + solids[0].index;
+        var erasePaths = erasers.map(function (erase) {
+          var d = erase.points.map(function (point, index) { return (index ? "L" : "M") + Math.round(point.x) + " " + Math.round(point.y); }).join(" ");
+          return '<path d="' + d + '" fill="none" stroke="black" stroke-width="' + Math.max(1, Math.min(18, Number(erase.s) || 4)) + '" stroke-linecap="round" stroke-linejoin="round"></path>';
+        }).join("");
+        output += '<defs><mask id="' + id + '" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100" style="mask-type:luminance"><rect x="0" y="0" width="100" height="100" fill="white"></rect>' + erasePaths + '</mask></defs><g mask="url(#' + id + ')">' + content + '</g>';
+      } else output += content;
+      solids = []; erasers = [];
+    }
+    (shapes || []).forEach(function (shape, index) {
+      if (shape.t === "e") { if (solids.length) erasers.push(shape); return; }
+      if (erasers.length && solids.length) flush();
+      solids.push({ shape: shape, index: index });
+    });
+    flush();
+    return output;
   }
 
   function studioShapesSvgMarkup(shapes, color, size, selected) {
     size = Math.max(12, Math.min(460, Number(size) || 17));
-    var contents = (shapes || []).map(function (shape, index) { return studioShapeMarkup(shape, color, index, index === selected); }).join("");
-    return '<svg viewBox="0 0 100 100" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + contents + '</svg>';
+    return '<svg viewBox="0 0 100 100" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + studioShapesMarkup(shapes, color, selected) + '</svg>';
   }
-
   function validPrivateColor(color) { return /^#[0-9a-f]{6}$/i.test(String(color || "")) ? String(color) : "#e2b94a"; }
 
   var masterUsers = [];
@@ -242,6 +298,7 @@
   var studioTool = "";
   var studioFill = false;
   var studioBrushSize = 4;
+  var studioEraserSize = 8;
   var studioDrag = null;
   var studioUndo = [];
   var studioRedo = [];
@@ -423,7 +480,7 @@
     var selected = studioState.selected >= 0 ? studioState.shapes[studioState.selected] : null;
     var design = serializeStudioDesign(studioState.shapes);
     var legacy = encodeMarkerDesign(studioState.shapes);
-    return '<div class="marker-studio"><div class="eb">МАСТЕРСКАЯ · LAST LIGHT</div><h1>Редактор значков</h1><p>Соберите значок из готовых фигур или рисуйте мышью и пальцем. Шаблоны сохраняются в этом браузере.</p><div class="marker-studio-grid"><div class="card marker-studio-controls"><h3>Готовые шаблоны</h3><div class="marker-studio-preset-grid">' + presetCards + '</div><label class="fi">Название шаблона<input data-studio-field="name" maxlength="48" value="' + esc(studioState.name) + '"></label><label class="fi">Заголовок метки<input data-studio-field="title" maxlength="100" value="' + esc(studioState.title) + '"></label><label class="fi">Цвет<input type="color" data-studio-field="color" value="' + esc(validPrivateColor(studioState.color)) + '"></label><label class="fi">Короткая надпись на карте<input data-studio-field="caption" maxlength="48" value="' + esc(studioState.caption) + '" placeholder="Например: РАДИО"></label><label class="fi">Описание<textarea data-studio-field="description" rows="3" maxlength="1000">' + esc(studioState.description) + '</textarea></label><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="pr" type="button" data-studio-save>Сохранить шаблон</button><button type="button" data-studio-use>Сохранить и выбрать</button></div><div class="marker-studio-note">После выбора шаблона редактор карты откроется на личной метке, где можно указать получателей. Сам значок синхронизируется вместе с меткой.</div><h3 style="margin-top:18px">Мои шаблоны</h3><div class="marker-studio-saved">' + savedHtml + '</div></div><div class="card marker-studio-work"><h3>Рабочая область</h3><div class="marker-studio-tools"><button type="button" data-studio-tool="c" class="' + (studioTool === "c" ? "on" : "") + '">Круг</button><button type="button" data-studio-tool="s" class="' + (studioTool === "s" ? "on" : "") + '">Квадрат</button><button type="button" data-studio-tool="l" class="' + (studioTool === "l" ? "on" : "") + '">Палочка</button><button type="button" data-studio-tool="t" class="' + (studioTool === "t" ? "on" : "") + '">Треугольник</button><button type="button" data-studio-tool="d" class="' + (studioTool === "d" ? "on" : "") + '">Ромб</button><button type="button" data-studio-tool="x" class="' + (studioTool === "x" ? "on" : "") + '">Крест</button><button type="button" data-studio-tool="L" class="' + (studioTool === "L" ? "on" : "") + '">Прямая линия</button><button type="button" data-studio-tool="p" class="' + (studioTool === "p" ? "on" : "") + '">Кисть</button></div><div class="marker-studio-canvas-wrap"><svg id="marker-design-canvas" class="marker-studio-canvas" viewBox="0 0 100 100" role="img" aria-label="Поле сборки значка"></svg></div><div class="marker-studio-selection"><button type="button" data-studio-history="undo" ' + (!studioUndo.length ? "disabled" : "") + ' title="Отменить последнее изменение">↶ Назад</button><button type="button" data-studio-history="redo" ' + (!studioRedo.length ? "disabled" : "") + ' title="Повторить отменённое изменение">↷ Вперёд</button><span data-studio-selection style="flex:1">Выберите фигуру или инструмент.</span></div><div class="marker-studio-selection"><label>Кисть <input type="range" id="studio-brush-size" min="1" max="18" value="' + studioBrushSize + '" aria-label="Толщина кисти"></label><span data-studio-brush-value>' + studioBrushSize + '</span><label><input type="checkbox" data-studio-fill ' + (studioFill ? "checked" : "") + ' style="width:auto"> Заливка новых фигур</label></div><div class="marker-studio-selection"><label>Размер фигуры <input type="range" id="studio-shape-size" min="3" max="18" value="' + (selected ? selected.s : 10) + '" ' + (!selected ? "disabled" : "") + '></label><button type="button" data-studio-fill-selected ' + (!selected || selected.t === "p" || selected.t === "L" ? "disabled" : "") + '>' + (selected && selected.fill ? "Убрать заливку" : "Залить фигуру") + '</button><button type="button" data-studio-delete ' + (!selected ? "disabled" : "") + '>Удалить фигуру</button></div><div class="marker-studio-preview" style="margin-top:14px">' + privateIcon({ design: design, symbol: legacy, color: studioState.color, caption: studioState.caption }).options.html + '<span><b data-studio-preview-title>' + esc(studioState.title || "Личная метка") + '</b><small data-studio-preview-caption>' + esc(studioState.caption || "Без подписи на карте") + '</small></span></div></div></div></div>';
+    return '<div class="marker-studio"><div class="eb">МАСТЕРСКАЯ · LAST LIGHT</div><h1>Редактор значков</h1><p>Соберите значок из фигур или рисуйте мышью и пальцем. Кисть рисует, ластик стирает части рисунка, а выбранные фигуры можно поворачивать. Шаблоны сохраняются в этом браузере.</p><div class="marker-studio-grid"><div class="card marker-studio-controls"><h3>Готовые шаблоны</h3><div class="marker-studio-preset-grid">' + presetCards + '</div><label class="fi">Название шаблона<input data-studio-field="name" maxlength="48" value="' + esc(studioState.name) + '"></label><label class="fi">Заголовок метки<input data-studio-field="title" maxlength="100" value="' + esc(studioState.title) + '"></label><label class="fi">Цвет<input type="color" data-studio-field="color" value="' + esc(validPrivateColor(studioState.color)) + '"></label><label class="fi">Короткая надпись на карте<input data-studio-field="caption" maxlength="48" value="' + esc(studioState.caption) + '" placeholder="Например: РАДИО"></label><label class="fi">Описание<textarea data-studio-field="description" rows="3" maxlength="1000">' + esc(studioState.description) + '</textarea></label><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="pr" type="button" data-studio-save>Сохранить шаблон</button><button type="button" data-studio-use>Сохранить и выбрать</button></div><div class="marker-studio-note">После выбора шаблона редактор карты откроется на личной метке, где можно указать получателей. Сам значок синхронизируется вместе с меткой.</div><h3 style="margin-top:18px">Мои шаблоны</h3><div class="marker-studio-saved">' + savedHtml + '</div></div><div class="card marker-studio-work"><h3>Рабочая область</h3><div class="marker-studio-tools"><button type="button" data-studio-tool="c" class="' + (studioTool === "c" ? "on" : "") + '">Круг</button><button type="button" data-studio-tool="s" class="' + (studioTool === "s" ? "on" : "") + '">Квадрат</button><button type="button" data-studio-tool="l" class="' + (studioTool === "l" ? "on" : "") + '">Палочка</button><button type="button" data-studio-tool="t" class="' + (studioTool === "t" ? "on" : "") + '">Треугольник</button><button type="button" data-studio-tool="d" class="' + (studioTool === "d" ? "on" : "") + '">Ромб</button><button type="button" data-studio-tool="x" class="' + (studioTool === "x" ? "on" : "") + '">Крест</button><button type="button" data-studio-tool="L" class="' + (studioTool === "L" ? "on" : "") + '">Прямая линия</button><button type="button" data-studio-tool="p" class="' + (studioTool === "p" ? "on" : "") + '">Кисть</button><button type="button" data-studio-tool="e" class="' + (studioTool === "e" ? "on" : "") + '">Ластик</button></div><div class="marker-studio-canvas-wrap"><svg id="marker-design-canvas" class="marker-studio-canvas" viewBox="0 0 100 100" role="img" aria-label="Поле сборки значка"></svg></div><div class="marker-studio-selection"><button type="button" data-studio-history="undo" ' + (!studioUndo.length ? "disabled" : "") + ' title="Отменить последнее изменение">↶ Назад</button><button type="button" data-studio-history="redo" ' + (!studioRedo.length ? "disabled" : "") + ' title="Повторить отменённое изменение">↷ Вперёд</button><span data-studio-selection style="flex:1">Выберите фигуру или инструмент.</span><button type="button" data-studio-rotate="-1" title="Повернуть против часовой стрелки">↶ Повернуть влево</button><button type="button" data-studio-rotate="1" title="Повернуть по часовой стрелке">↷ Повернуть вправо</button></div><div class="marker-studio-selection"><label>Кисть <input type="range" id="studio-brush-size" min="1" max="18" value="' + studioBrushSize + '" aria-label="Толщина кисти"></label><span data-studio-brush-value>' + studioBrushSize + '</span><label>Ластик <input type="range" id="studio-eraser-size" min="1" max="18" value="' + studioEraserSize + '" aria-label="Размер ластика"></label><span data-studio-eraser-value>' + studioEraserSize + '</span><label><input type="checkbox" data-studio-fill ' + (studioFill ? "checked" : "") + ' style="width:auto"> Заливка новых фигур</label></div><div class="marker-studio-selection"><label>Размер фигуры <input type="range" id="studio-shape-size" min="3" max="18" value="' + (selected ? selected.s : 10) + '" ' + (!selected ? "disabled" : "") + '></label><button type="button" data-studio-fill-selected ' + (!selected || selected.t === "p" || selected.t === "L" ? "disabled" : "") + '>' + (selected && selected.fill ? "Убрать заливку" : "Залить фигуру") + '</button><button type="button" data-studio-delete ' + (!selected ? "disabled" : "") + '>Удалить фигуру</button></div><div class="marker-studio-preview" style="margin-top:14px">' + privateIcon({ design: design, symbol: legacy, color: studioState.color, caption: studioState.caption }).options.html + '<span><b data-studio-preview-title>' + esc(studioState.title || "Личная метка") + '</b><small data-studio-preview-caption>' + esc(studioState.caption || "Без подписи на карте") + '</small></span></div></div></div></div>';
   }
 
   function renderStudioCanvas() {
@@ -431,17 +488,20 @@
     if (!svg) return;
     var color = validPrivateColor(studioState.color);
     var html = '<circle cx="50" cy="50" r="46" fill="#14150f" stroke="' + color + '" stroke-width="3"></circle>';
-    html += studioState.shapes.map(function (shape, index) { return studioShapeMarkup(shape, color, index, index === studioState.selected); }).join("");
+    html += studioShapesMarkup(studioState.shapes, color, studioState.selected);
     svg.innerHTML = html;
     var selection = document.querySelector("[data-studio-selection]"), slider = document.getElementById("studio-shape-size");
     var selected = studioState.selected >= 0 ? studioState.shapes[studioState.selected] : null;
-    if (selection) selection.textContent = selected ? "Фигура " + (studioState.selected + 1) + " выбрана · перетащите её" : studioTool === "p" ? "Рисуйте по полю, удерживая кнопку мыши или касаясь экрана" : studioTool === "L" ? "Потяните по полю, чтобы провести прямую линию" : studioTool ? "Щёлкните или потяните по полю, чтобы добавить фигуру" : "Выберите фигуру или инструмент.";
+    if (selection) selection.textContent = selected ? "Фигура " + (studioState.selected + 1) + " выбрана · перетащите её" : studioTool === "e" ? "Проведите ластиком по рисунку, чтобы стереть его части" : studioTool === "p" ? "Рисуйте по полю, удерживая кнопку мыши или касаясь экрана" : studioTool === "L" ? "Потяните по полю, чтобы провести прямую линию" : studioTool ? "Щёлкните или потяните по полю, чтобы добавить фигуру" : "Выберите фигуру или инструмент.";
     if (slider) { slider.disabled = !selected; if (selected) slider.value = selected.s; }
     var brush = document.getElementById("studio-brush-size"); if (brush) brush.value = studioBrushSize;
+    var eraser = document.getElementById("studio-eraser-size"); if (eraser) eraser.value = studioEraserSize;
+    var eraserValue = document.querySelector("[data-studio-eraser-value]"); if (eraserValue) eraserValue.textContent = studioEraserSize;
     var fill = document.querySelector("[data-studio-fill]"); if (fill) fill.checked = studioFill;
     var del = document.querySelector("[data-studio-delete]"); if (del) del.disabled = !selected;
     var fillSelected = document.querySelector("[data-studio-fill-selected]");
-    if (fillSelected) { fillSelected.disabled = !selected || selected.t === "p" || selected.t === "L"; fillSelected.textContent = selected && selected.fill ? "Убрать заливку" : "Залить фигуру"; }
+    if (fillSelected) { fillSelected.disabled = !selected || selected.t === "p" || selected.t === "L" || selected.t === "e"; fillSelected.textContent = selected && selected.fill ? "Убрать заливку" : "Залить фигуру"; }
+    document.querySelectorAll("[data-studio-rotate]").forEach(function (button) { button.disabled = !selected || selected.t === "e"; });
     var undo = document.querySelector('[data-studio-history="undo"]'), redo = document.querySelector('[data-studio-history="redo"]');
     if (undo) undo.disabled = !studioUndo.length;
     if (redo) redo.disabled = !studioRedo.length;
@@ -704,9 +764,14 @@
     }
     var historyAction = button.getAttribute("data-studio-history");
     if (historyAction) { stepStudioHistory(historyAction); return; }
+    var rotate = button.getAttribute("data-studio-rotate");
+    if (rotate !== null && studioState.selected >= 0 && studioState.shapes[studioState.selected]) {
+      rotateStudioShape(studioState.shapes[studioState.selected], Number(rotate));
+      commitStudioHistory(); renderStudioCanvas(); return;
+    }
     if (button.hasAttribute("data-studio-fill-selected") && studioState.selected >= 0 && studioState.shapes[studioState.selected]) {
       var selectedShape = studioState.shapes[studioState.selected];
-      if (selectedShape.t !== "p" && selectedShape.t !== "L") { selectedShape.fill = !selectedShape.fill; commitStudioHistory(); renderStudioCanvas(); }
+      if (selectedShape.t !== "p" && selectedShape.t !== "L" && selectedShape.t !== "e") { selectedShape.fill = !selectedShape.fill; commitStudioHistory(); renderStudioCanvas(); }
       return;
     }
     if (button.hasAttribute("data-studio-delete") && studioState.selected >= 0) {
@@ -728,6 +793,7 @@
       renderStudioCanvas();
     }
     if (target.id === "studio-brush-size") { studioBrushSize = Math.max(1, Math.min(18, Number(target.value) || 4)); var brushValue = document.querySelector("[data-studio-brush-value]"); if (brushValue) brushValue.textContent = studioBrushSize; }
+    if (target.id === "studio-eraser-size") { studioEraserSize = Math.max(1, Math.min(18, Number(target.value) || 8)); var eraserValue = document.querySelector("[data-studio-eraser-value]"); if (eraserValue) eraserValue.textContent = studioEraserSize; }
   });
   markerStudioRoot.addEventListener("change", function (event) {
     var target = event.target;
@@ -743,11 +809,13 @@
       if (studioState.shapes.length >= 20) { toast("В одном значке можно разместить до двадцати фигур.", "error"); return; }
       var shape;
       if (studioTool === "p") shape = { t: "p", points: [point], s: studioBrushSize, fill: false };
+      else if (studioTool === "e") shape = { t: "e", points: [point], s: studioEraserSize, fill: false };
       else if (studioTool === "L") shape = { t: "L", x1: point.x, y1: point.y, x2: point.x, y2: point.y, s: studioBrushSize, fill: false };
       else shape = { t: studioTool, x: point.x, y: point.y, s: 10, r: 0, fill: studioFill };
       studioState.shapes.push(shape);
-      studioState.selected = studioState.shapes.length - 1;
-      studioDrag = { pointerId: event.pointerId, kind: studioTool === "p" ? "brush" : studioTool === "L" ? "line" : "shape", index: studioState.selected, lastPoint: point };
+      var newIndex = studioState.shapes.length - 1;
+      studioState.selected = studioTool === "e" ? -1 : newIndex;
+      studioDrag = { pointerId: event.pointerId, kind: studioTool === "p" ? "brush" : studioTool === "e" ? "erase" : studioTool === "L" ? "line" : "shape", index: newIndex, lastPoint: point };
       if (svg.setPointerCapture) svg.setPointerCapture(event.pointerId);
     } else if (shapeElement) {
       studioState.selected = Number(shapeElement.getAttribute("data-studio-shape"));
@@ -769,7 +837,7 @@
       studioDrag.lastPoint = point;
     } else if (studioDrag.kind === "line") {
       shape.x2 = point.x; shape.y2 = point.y;
-    } else if (studioDrag.kind === "brush") {
+    } else if (studioDrag.kind === "brush" || studioDrag.kind === "erase") {
       var dx = point.x - studioDrag.lastPoint.x, dy = point.y - studioDrag.lastPoint.y;
       if (Math.sqrt(dx * dx + dy * dy) >= 1.2) { shape.points.push(point); studioDrag.lastPoint = point; }
     }
@@ -778,7 +846,8 @@
   function finishStudioPointer(event) {
     if (!studioDrag || (event && event.pointerId !== studioDrag.pointerId)) return;
     var shape = studioState.shapes[studioDrag.index];
-    if (studioDrag.kind === "brush" && shape && shape.points.length === 1) shape.points.push({ x: shape.points[0].x, y: shape.points[0].y });
+    if ((studioDrag.kind === "brush" || studioDrag.kind === "erase") && shape && shape.points.length === 1) shape.points.push({ x: shape.points[0].x, y: shape.points[0].y });
+    if (studioDrag.kind === "erase") studioState.selected = -1;
     studioDrag = null;
     commitStudioHistory();
     renderStudioCanvas();
