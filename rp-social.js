@@ -315,6 +315,25 @@
   var style = document.createElement("style");
   style.textContent = ".master-player-row{display:grid;grid-template-columns:minmax(180px,1fr) minmax(180px,280px) auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)}.audience-list{max-height:220px;overflow:auto;border:1px solid var(--bd);border-radius:9px;padding:6px 10px;margin:8px 0}.audience-list label{display:flex;gap:8px;align-items:center;padding:6px 2px;color:var(--tx);cursor:pointer}.audience-list input{width:auto}.broadcast-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.broadcast-channel{border:1px solid #756536;color:var(--gd);padding:2px 8px;border-radius:999px;font-size:11px;text-transform:uppercase;letter-spacing:.05em}.pin-caption{border:1px solid #0007}.private-marker-delete{margin-top:8px}.private-form-note{font-size:12px;line-height:1.5;color:var(--mu);margin:8px 0}.private-marker-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd)}@media(max-width:700px){.master-player-row{grid-template-columns:1fr;gap:5px}}";
   document.head.appendChild(style);
+  function updateRangeVisual(input) {
+    var min = input.min === "" ? 0 : Number(input.min), max = input.max === "" ? 100 : Number(input.max), value = Number(input.value);
+    if (!isFinite(min)) min = 0;
+    if (!isFinite(max) || max <= min) max = min + 100;
+    if (!isFinite(value)) value = min;
+    var progress = Math.max(0, Math.min(100, (value - min) / (max - min) * 100));
+    input.style.setProperty("--range-progress", progress.toFixed(2) + "%");
+  }
+  function updateRangeTree(node) {
+    if (!node || node.nodeType !== 1) return;
+    if (node.matches && node.matches('input[type="range"]')) updateRangeVisual(node);
+    if (node.querySelectorAll) node.querySelectorAll('input[type="range"]').forEach(updateRangeVisual);
+  }
+  document.addEventListener("input", function (event) { if (event.target.matches && event.target.matches('input[type="range"]')) updateRangeVisual(event.target); }, true);
+  document.addEventListener("change", function (event) { if (event.target.matches && event.target.matches('input[type="range"]')) updateRangeVisual(event.target); }, true);
+  updateRangeTree(document.documentElement);
+  if (window.MutationObserver && document.body) new MutationObserver(function (records) {
+    records.forEach(function (record) { record.addedNodes.forEach(updateRangeTree); });
+  }).observe(document.body, { childList: true, subtree: true });
   var privateDesignStyle = document.createElement("style");
   privateDesignStyle.textContent = ".private-form-note{font-size:12px;line-height:1.5;color:var(--mu);margin:8px 0}.private-template-preview{display:flex;align-items:center;gap:10px;padding:8px;margin:8px 0;border:1px dashed var(--bd);border-radius:9px;background:#12140f}.private-template-preview .pin-wrap{flex:0 0 30px}.private-template-copy{min-width:0}.private-template-copy b,.private-template-copy small{display:block}.private-template-copy small{color:var(--mu);font-size:11px;margin-top:3px}.marker-studio{height:100%;overflow:auto;padding:20px;max-width:1250px;margin:0 auto}.marker-studio>p{color:var(--mu);max-width:760px;line-height:1.55}.marker-studio-grid{display:grid;grid-template-columns:minmax(280px,350px) minmax(360px,1fr);gap:14px;align-items:start}.marker-studio-controls,.marker-studio-work{min-width:0}.marker-studio-preset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0 14px}.marker-studio-preset{display:flex;align-items:center;gap:7px;min-width:0;text-align:left;padding:6px;min-height:48px}.marker-studio-preset.on{border-color:var(--gd);color:var(--gd)}.marker-studio-preset__icon{flex:0 0 30px;width:30px;height:30px;overflow:hidden}.marker-studio-preset__icon .pin-wrap{transform:scale(.88);transform-origin:left top}.marker-studio .fi{margin:8px 0}.marker-studio .fi input,.marker-studio .fi textarea{width:100%}.marker-studio-tools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.marker-studio-tools button.on{border-color:var(--gd);color:var(--gd);background:#242216}.marker-studio-canvas-wrap{width:min(100%,460px);aspect-ratio:1;margin:10px auto 14px;padding:12px;border:1px solid var(--bd);border-radius:14px;background:radial-gradient(circle at 50% 42%,#25261d,#11130f 70%);touch-action:none}.marker-studio-canvas{display:block;width:100%;height:100%;overflow:visible;touch-action:none}.marker-studio-canvas [data-studio-shape]{cursor:move}.marker-studio-selection{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.marker-studio-selection input[type=range]{width:110px}.marker-studio-selection>label{display:flex;align-items:center;gap:6px}.marker-studio-selection input[type=checkbox]{width:auto}.marker-studio-selection button:disabled{opacity:.45}.marker-studio-preview{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;background:#12140f;border:1px dashed var(--bd)}.marker-studio-preview .pin-wrap{transform:scale(1.25);transform-origin:left center;flex:0 0 40px}.marker-studio-preview b,.marker-studio-preview small{display:block}.marker-studio-preview small{color:var(--mu);margin-top:3px}.marker-studio-saved{display:grid;gap:5px;margin:8px 0}.marker-studio-saved-row{display:flex;align-items:center;gap:6px}.marker-studio-saved-row>[data-studio-load]{flex:1;text-align:left}.marker-studio-note{font-size:11px;line-height:1.45;color:var(--mu);margin:8px 0}@media(max-width:780px){.marker-studio{padding:12px}.marker-studio-grid{grid-template-columns:1fr}.marker-studio-canvas-wrap{width:min(100%,360px)}}";
   document.head.appendChild(privateDesignStyle);
@@ -513,6 +532,7 @@
     var root = document.getElementById("marker-studio-app");
     if (!root || !isMasterNow()) return;
     root.innerHTML = studioMarkup();
+    updateRangeTree(root);
     renderStudioCanvas();
   }
 
@@ -618,6 +638,7 @@
   drawLeg = function () { baseDrawLeg(); renderPrivateLegend(); };
   insp = function () {
     baseInsp();
+    updateRangeTree(document.getElementById("einsp"));
     if (typeof EM === "undefined" || !EM) return;
     if (SELO && SELO.k === "pts") {
       var panel = document.getElementById("einsp");
