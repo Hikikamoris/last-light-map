@@ -329,6 +329,41 @@ const api = {
       status: "Ожидает вердикта", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
     });
   },
+  async updateWallEntry(id, kind, text) {
+    const user = state.user;
+    if (!db || !user) throw new Error("Сначала войдите через Google.");
+    const body = String(text || "").trim();
+    if (!body) throw new Error("Текст публикации не может быть пустым.");
+    if (body.length > 12000) throw new Error("Текст слишком длинный (максимум 12 000 символов).");
+    const isMaster = ["master", "owner"].includes(state.profile?.role);
+    const parent = ({ order: "orders", post: "posts", broadcast: "broadcasts" })[kind];
+    if (!parent) throw new Error("Неизвестный тип записи.");
+    const ref = doc(db, parent, id);
+    if (!isMaster) {
+      if (kind !== "order" || state.profile?.role !== "player") {
+        throw new Error("Редактировать публикации может только её автор или мастер.");
+      }
+      const snap = await getDoc(ref);
+      if (!snap.exists() || snap.data().authorUid !== user.uid) throw new Error("Можно редактировать только свой пост.");
+    }
+    await updateDoc(ref, { text: body, updatedAt: serverTimestamp() });
+  },
+  async deleteWallEntry(id, kind) {
+    const user = state.user;
+    if (!db || !user) throw new Error("Сначала войдите через Google.");
+    const isMaster = ["master", "owner"].includes(state.profile?.role);
+    const parent = ({ order: "orders", post: "posts", broadcast: "broadcasts" })[kind];
+    if (!parent) throw new Error("Неизвестный тип записи.");
+    const ref = doc(db, parent, id);
+    if (!isMaster) {
+      if (kind !== "order" || state.profile?.role !== "player") {
+        throw new Error("Удалить публикацию может только её автор или мастер.");
+      }
+      const snap = await getDoc(ref);
+      if (!snap.exists() || snap.data().authorUid !== user.uid) throw new Error("Можно удалить только свой пост.");
+    }
+    await deleteDoc(ref);
+  },
   async createBroadcast(post) {
     if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) throw new Error("Создавать публикации может только мастер.");
     const text = String(post?.text || "").trim();
@@ -522,3 +557,4 @@ if (!isUsableConfig(config)) {
     publish();
   }
 }
+
