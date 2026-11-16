@@ -29,20 +29,188 @@
     return shapes;
   }
 
+  function normalizeStudioShape(shape) {
+    if (!shape || typeof shape !== "object") return null;
+    var type = String(shape.t || ""), allowed = { c: 1, s: 1, l: 1, t: 1, d: 1, x: 1, L: 1, p: 1 };
+    if (!allowed[type]) return null;
+    function coord(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))); }
+    var out = { t: type, s: Math.max(1, Math.min(18, Math.round(Number(shape.s) || 4))), fill: !!shape.fill };
+    if (type === "p") {
+      if (!Array.isArray(shape.points) || shape.points.length < 2) return null;
+      out.points = shape.points.slice(0, 240).map(function (point) { return { x: coord(point.x), y: coord(point.y) }; });
+      return out.points.length >= 2 ? out : null;
+    }
+    if (type === "L") {
+      out.x1 = coord(shape.x1); out.y1 = coord(shape.y1); out.x2 = coord(shape.x2); out.y2 = coord(shape.y2);
+      return out;
+    }
+    out.x = coord(shape.x); out.y = coord(shape.y);
+    out.s = Math.max(3, Math.min(18, Math.round(Number(shape.s) || 10)));
+    out.r = Math.max(0, Math.min(7, Math.round(Number(shape.r) || 0)));
+    return out;
+  }
+
+  function parseStudioDesign(value) {
+    try {
+      var raw = typeof value === "string" ? JSON.parse(value) : value;
+      if (!raw || raw.v !== 1 || !Array.isArray(raw.shapes) || raw.shapes.length > 20) return null;
+      var shapes = raw.shapes.map(normalizeStudioShape);
+      return shapes.every(Boolean) ? shapes : null;
+    } catch (error) { return null; }
+  }
+
+  function serializeStudioDesign(shapes) {
+    if (!Array.isArray(shapes) || shapes.length > 20) return "";
+    var clean = shapes.map(normalizeStudioShape);
+    if (!clean.every(Boolean)) return "";
+    return JSON.stringify({ v: 1, shapes: clean });
+  }
+
+  function packStudioShapes(shapes) {
+    if (!Array.isArray(shapes) || shapes.length > 20) return null;
+    function c2(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))).toString(36).padStart(2, "0"); }
+    function c1(value) { return Math.max(1, Math.min(18, Math.round(Number(value) || 4))).toString(36); }
+    var paths = shapes.filter(function (shape) { return shape.t === "p"; });
+    var pathBudget = 80, output = "";
+    shapes.forEach(function (shape) {
+      if (shape.t === "p") {
+        var remainingPaths = paths.length;
+        var maxPoints = Math.max(2, Math.floor(pathBudget / remainingPaths));
+        var points = shape.points;
+        if (points.length > maxPoints) {
+          var reduced = [];
+          for (var i = 0; i < maxPoints; i++) reduced.push(points[Math.round(i * (points.length - 1) / (maxPoints - 1))]);
+          points = reduced;
+        }
+        pathBudget -= points.length; paths.shift();
+        output += "p" + c1(shape.s) + points.length.toString(36).padStart(2, "0") + points.map(function (point) { return c2(point.x) + c2(point.y); }).join("");
+        return;
+      }
+      if (shape.t === "L") { output += "L" + c2(shape.x1) + c2(shape.y1) + c2(shape.x2) + c2(shape.y2) + c1(shape.s); return; }
+      var flags = (shape.r || 0) + (shape.fill ? 8 : 0);
+      output += shape.t + c2(shape.x) + c2(shape.y) + c1(shape.s) + flags.toString(36);
+    });
+    return output;
+  }
+
+  function unpackStudioShapes(source) {
+    var output = [], i = 0;
+    function read2() { var value = parseInt(source.slice(i, i + 2), 36); i += 2; return value; }
+    function read1() { var value = parseInt(source.charAt(i), 36); i += 1; return value; }
+    while (i < source.length && output.length <= 20) {
+      var type = source.charAt(i++), item;
+      if (type === "p") {
+        var width = read1(), count = parseInt(source.slice(i, i + 2), 36); i += 2;
+        if (!Number.isFinite(width) || !Number.isFinite(count) || count < 2 || count > 80 || i + count * 4 > source.length) return null;
+        item = { t: "p", s: width, fill: false, points: [] };
+        for (var p = 0; p < count; p++) item.points.push({ x: read2(), y: read2() });
+      } else if (type === "L") {
+        item = { t: "L", x1: read2(), y1: read2(), x2: read2(), y2: read2(), s: read1(), fill: false };
+      } else if ({ c: 1, s: 1, l: 1, t: 1, d: 1, x: 1 }[type]) {
+        var x = read2(), y = read2(), size = read1(), flags = read1();
+        if (!Number.isFinite(flags) || flags > 15) return null;
+        item = { t: type, x: x, y: y, s: size, r: flags % 8, fill: flags >= 8 };
+      } else return null;
+      if (!Number.isFinite(item.s) || item.s < 1 || item.s > 18) return null;
+      output.push(item);
+    }
+    return i === source.length && output.length <= 20 ? output : null;
+  }
+
+  function packMarkerDescription(description, design) {
+    var shapes = parseStudioDesign(design);
+    if (!shapes || !shapes.length) return String(description || "").slice(0, 1000);
+    var packed = packStudioShapes(shapes);
+    if (packed === null) throw new Error("В рисунке слишком много точек. Упростите несколько линий и попробуйте ещё раз.");
+    var prefix = "LLD1:" + "00" + ":";
+    var maxDescription = Math.max(0, Math.min(450, 1000 - prefix.length - packed.length));
+    var text = String(description || "").trim().slice(0, maxDescription);
+    if (window.TextEncoder) {
+      var encoder = new TextEncoder(), byteLimit = Math.max(0, 1000 - packed.length - prefix.length);
+      while (text && encoder.encode(text).length > byteLimit) text = Array.from(text).slice(0, -1).join("");
+    }
+    return "LLD1:" + text.length.toString(36).padStart(2, "0") + ":" + text + packed;
+  }
+
+  function unpackMarkerDescription(value) {
+    var raw = String(value || "");
+    if (raw.indexOf("LLD1:") !== 0 || raw.charAt(7) !== ":") return { description: raw, shapes: null };
+    var length = parseInt(raw.slice(5, 7), 36);
+    if (!Number.isFinite(length) || length < 0 || length > 1000 || 8 + length > raw.length) return { description: raw, shapes: null };
+    var description = raw.slice(8, 8 + length), shapes = unpackStudioShapes(raw.slice(8 + length));
+    return shapes ? { description: description, shapes: shapes } : { description: raw, shapes: null };
+  }
+
+  function studioSnapshot() {
+    return JSON.stringify({ name: studioState.name, title: studioState.title, description: studioState.description, color: studioState.color, caption: studioState.caption, shapes: studioState.shapes });
+  }
+
+  function commitStudioHistory() {
+    if (!studioHistoryBaseline) { studioHistoryBaseline = studioSnapshot(); return; }
+    var current = studioSnapshot();
+    if (current === studioHistoryBaseline) return;
+    studioUndo.push(studioHistoryBaseline);
+    if (studioUndo.length > 60) studioUndo.shift();
+    studioRedo = [];
+    studioHistoryBaseline = current;
+  }
+
+  function restoreStudioHistory(snapshot) {
+    try {
+      var restored = JSON.parse(snapshot), shapes = parseStudioDesign({ v: 1, shapes: restored.shapes });
+      if (!shapes) return false;
+      studioState.name = restored.name; studioState.title = restored.title; studioState.description = restored.description;
+      studioState.color = validPrivateColor(restored.color); studioState.caption = restored.caption; studioState.shapes = shapes; studioState.selected = -1;
+      studioHistoryBaseline = studioSnapshot(); studioTool = ""; renderMarkerStudio(); return true;
+    } catch (error) { return false; }
+  }
+
+  function stepStudioHistory(direction) {
+    commitStudioHistory();
+    var source = direction === "undo" ? studioUndo : studioRedo;
+    var destination = direction === "undo" ? studioRedo : studioUndo;
+    if (!source.length) return;
+    destination.push(studioSnapshot());
+    restoreStudioHistory(source.pop());
+  }
+
+  function moveStudioShape(shape, dx, dy) {
+    function shift(value) { return Math.max(3, Math.min(97, Math.round(value))); }
+    if (shape.t === "p") { shape.points.forEach(function (point) { point.x = shift(point.x + dx); point.y = shift(point.y + dy); }); return; }
+    if (shape.t === "L") { shape.x1 = shift(shape.x1 + dx); shape.y1 = shift(shape.y1 + dy); shape.x2 = shift(shape.x2 + dx); shape.y2 = shift(shape.y2 + dy); return; }
+    shape.x = shift(shape.x + dx); shape.y = shift(shape.y + dy);
+  }
+
   function markerDesignSvg(symbol, size) {
     var shapes = decodeMarkerDesign(symbol);
     if (!shapes) return "";
     size = Math.max(12, Math.min(48, Number(size) || 17));
-    var content = shapes.map(function (shape) {
-      var x = shape.x, y = shape.y, s = shape.s, angle = shape.r * 45;
-      if (shape.t === "c") return '<circle cx="' + x + '" cy="' + y + '" r="' + s + '"></circle>';
-      if (shape.t === "s") return '<rect x="' + (x - s) + '" y="' + (y - s) + '" width="' + (s * 2) + '" height="' + (s * 2) + '" rx="2"></rect>';
-      if (shape.t === "l") { var dx = Math.round(s * Math.cos(angle * Math.PI / 180)), dy = Math.round(s * Math.sin(angle * Math.PI / 180)); return '<line x1="' + (x - dx) + '" y1="' + (y - dy) + '" x2="' + (x + dx) + '" y2="' + (y + dy) + '"></line>'; }
-      if (shape.t === "t") return '<polygon points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + (y + s) + ' ' + (x - s) + ',' + (y + s) + '" transform="rotate(' + angle + ' ' + x + ' ' + y + ')"></polygon>';
-      if (shape.t === "d") return '<polygon points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + y + ' ' + x + ',' + (y + s) + ' ' + (x - s) + ',' + y + '"></polygon>';
-      return '<path d="M' + (x - s) + ' ' + y + 'H' + (x + s) + 'M' + x + ' ' + (y - s) + 'V' + (y + s) + '"></path>';
-    }).join("");
-    return '<svg viewBox="0 0 100 100" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + content + '</svg>';
+    return studioShapesSvgMarkup(shapes, "currentColor", size, -1);
+  }
+
+  function markerDesignShapesSvg(shapes, color, size) {
+    if (!Array.isArray(shapes) || !shapes.length) return "";
+    return studioShapesSvgMarkup(shapes, color || "currentColor", Math.max(12, Math.min(48, Number(size) || 17)), -1);
+  }
+
+  function studioShapeMarkup(shape, color, index, selected) {
+    var x = Math.round(Number(shape.x) || 0), y = Math.round(Number(shape.y) || 0), s = Math.max(1, Math.min(22, Number(shape.s) || 4));
+    var width = shape.t === "p" || shape.t === "L" ? s : Math.max(1, s / 3);
+    var attrs = (index >= 0 ? 'data-studio-shape="' + index + '" ' : "") + 'fill="' + (shape.fill && shape.t !== "p" && shape.t !== "L" ? color : "none") + '" stroke="' + color + '" stroke-width="' + (selected ? Math.max(width, 4) : width) + '" stroke-linecap="round" stroke-linejoin="round"';
+    if (shape.t === "c") return '<circle ' + attrs + ' cx="' + x + '" cy="' + y + '" r="' + s + '"></circle>';
+    if (shape.t === "s") return '<rect ' + attrs + ' x="' + (x - s) + '" y="' + (y - s) + '" width="' + (s * 2) + '" height="' + (s * 2) + '" rx="2"></rect>';
+    if (shape.t === "l") { var angle = (Number(shape.r) || 0) * 45, dx = Math.round(s * Math.cos(angle * Math.PI / 180)), dy = Math.round(s * Math.sin(angle * Math.PI / 180)); return '<line ' + attrs + ' x1="' + (x - dx) + '" y1="' + (y - dy) + '" x2="' + (x + dx) + '" y2="' + (y + dy) + '"></line>'; }
+    if (shape.t === "L") return '<line ' + attrs + ' x1="' + Math.round(shape.x1) + '" y1="' + Math.round(shape.y1) + '" x2="' + Math.round(shape.x2) + '" y2="' + Math.round(shape.y2) + '"></line>';
+    if (shape.t === "p") return '<path ' + attrs + ' d="' + shape.points.map(function (point, i) { return (i ? "L" : "M") + Math.round(point.x) + " " + Math.round(point.y); }).join(" ") + '"></path>';
+    if (shape.t === "t") return '<polygon ' + attrs + ' points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + (y + s) + ' ' + (x - s) + ',' + (y + s) + '" transform="rotate(' + ((Number(shape.r) || 0) * 45) + ' ' + x + ' ' + y + ')"></polygon>';
+    if (shape.t === "d") return '<polygon ' + attrs + ' points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + y + ' ' + x + ',' + (y + s) + ' ' + (x - s) + ',' + y + '"></polygon>';
+    return '<path ' + attrs + ' d="M' + (x - s) + ' ' + y + 'H' + (x + s) + 'M' + x + ' ' + (y - s) + 'V' + (y + s) + '"></path>';
+  }
+
+  function studioShapesSvgMarkup(shapes, color, size, selected) {
+    size = Math.max(12, Math.min(460, Number(size) || 17));
+    var contents = (shapes || []).map(function (shape, index) { return studioShapeMarkup(shape, color, index, index === selected); }).join("");
+    return '<svg viewBox="0 0 100 100" width="' + size + '" height="' + size + '" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + contents + '</svg>';
   }
 
   function validPrivateColor(color) { return /^#[0-9a-f]{6}$/i.test(String(color || "")) ? String(color) : "#e2b94a"; }
@@ -58,7 +226,7 @@
   var privateEditorLayer = null;
   var privateEditorCaptureBound = false;
   var PRIVATE_DESIGNS_KEY = "lastlight-private-marker-templates-v1";
-  var privateForm = { title: "Личная метка", description: "", symbol: "post", color: "#e2b94a", caption: "", visibleTo: [], preset: "standard" };
+  var privateForm = { title: "Личная метка", description: "", symbol: "post", design: "", color: "#e2b94a", caption: "", visibleTo: [], preset: "standard" };
   var privatePresets = [
     { id: "standard", name: "Стандарт", title: "Личная метка", description: "", symbol: encodeMarkerDesign([{ t: "d", x: 50, y: 48, s: 14 }, { t: "c", x: 50, y: 48, s: 4 }]), color: "#e2b94a", caption: "" },
     { id: "radio", name: "Радио", title: "Радиосвязь", description: "Радиопереговоры или сигнал связи.", symbol: encodeMarkerDesign([{ t: "c", x: 50, y: 50, s: 4 }, { t: "l", x: 50, y: 50, s: 14, r: 1 }, { t: "l", x: 50, y: 50, s: 14, r: 3 }]), color: "#4f9fe0", caption: "РАДИО" },
@@ -67,10 +235,18 @@
     { id: "resources", name: "Ресурсы", title: "Ресурсы", description: "Место с припасами или материалами.", symbol: encodeMarkerDesign([{ t: "s", x: 50, y: 50, s: 13 }, { t: "c", x: 50, y: 50, s: 5 }]), color: "#e2b94a", caption: "РЕСУРСЫ" },
     { id: "medical", name: "Медицина", title: "Медицина", description: "Медицинская помощь или запасы.", symbol: encodeMarkerDesign([{ t: "c", x: 50, y: 50, s: 14 }, { t: "x", x: 50, y: 50, s: 8 }]), color: "#4caf50", caption: "МЕД" }
   ];
+  privatePresets.forEach(function (preset) { preset.design = serializeStudioDesign(decodeMarkerDesign(preset.symbol) || []); });
   privateForm.symbol = privatePresets[0].symbol;
+  privateForm.design = privatePresets[0].design;
   var studioState = { id: "standard", name: "Стандарт", title: "Личная метка", description: "", symbol: privatePresets[0].symbol, color: privatePresets[0].color, caption: "", shapes: decodeMarkerDesign(privatePresets[0].symbol) || [], selected: -1 };
   var studioTool = "";
+  var studioFill = false;
+  var studioBrushSize = 4;
   var studioDrag = null;
+  var studioUndo = [];
+  var studioRedo = [];
+  var studioHistoryBaseline = "";
+  studioHistoryBaseline = studioSnapshot();
   var baseWall = rWall;
   var baseRenderCloudWall = renderCloudWall;
   var baseDrawMap = drawMap;
@@ -83,7 +259,7 @@
   style.textContent = ".master-player-row{display:grid;grid-template-columns:minmax(180px,1fr) minmax(180px,280px) auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--bd)}.audience-list{max-height:220px;overflow:auto;border:1px solid var(--bd);border-radius:9px;padding:6px 10px;margin:8px 0}.audience-list label{display:flex;gap:8px;align-items:center;padding:6px 2px;color:var(--tx);cursor:pointer}.audience-list input{width:auto}.broadcast-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.broadcast-channel{border:1px solid #756536;color:var(--gd);padding:2px 8px;border-radius:999px;font-size:11px;text-transform:uppercase;letter-spacing:.05em}.pin-caption{border:1px solid #0007}.private-marker-delete{margin-top:8px}.private-form-note{font-size:12px;line-height:1.5;color:var(--mu);margin:8px 0}.private-marker-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--bd)}@media(max-width:700px){.master-player-row{grid-template-columns:1fr;gap:5px}}";
   document.head.appendChild(style);
   var privateDesignStyle = document.createElement("style");
-  privateDesignStyle.textContent = ".private-form-note{font-size:12px;line-height:1.5;color:var(--mu);margin:8px 0}.private-template-preview{display:flex;align-items:center;gap:10px;padding:8px;margin:8px 0;border:1px dashed var(--bd);border-radius:9px;background:#12140f}.private-template-preview .pin-wrap{flex:0 0 30px}.private-template-copy{min-width:0}.private-template-copy b,.private-template-copy small{display:block}.private-template-copy small{color:var(--mu);font-size:11px;margin-top:3px}.marker-studio{height:100%;overflow:auto;padding:20px;max-width:1250px;margin:0 auto}.marker-studio>p{color:var(--mu);max-width:760px;line-height:1.55}.marker-studio-grid{display:grid;grid-template-columns:minmax(280px,350px) minmax(360px,1fr);gap:14px;align-items:start}.marker-studio-controls,.marker-studio-work{min-width:0}.marker-studio-preset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0 14px}.marker-studio-preset{display:flex;align-items:center;gap:7px;min-width:0;text-align:left;padding:6px;min-height:48px}.marker-studio-preset.on{border-color:var(--gd);color:var(--gd)}.marker-studio-preset__icon{flex:0 0 30px;width:30px;height:30px;overflow:hidden}.marker-studio-preset__icon .pin-wrap{transform:scale(.88);transform-origin:left top}.marker-studio .fi{margin:8px 0}.marker-studio .fi input,.marker-studio .fi textarea{width:100%}.marker-studio-tools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.marker-studio-tools button.on{border-color:var(--gd);color:var(--gd);background:#242216}.marker-studio-canvas-wrap{width:min(100%,460px);aspect-ratio:1;margin:10px auto 14px;padding:12px;border:1px solid var(--bd);border-radius:14px;background:radial-gradient(circle at 50% 42%,#25261d,#11130f 70%);touch-action:none}.marker-studio-canvas{display:block;width:100%;height:100%;overflow:visible;touch-action:none}.marker-studio-canvas [data-studio-shape]{cursor:move}.marker-studio-selection{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.marker-studio-selection input[type=range]{width:110px}.marker-studio-preview{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;background:#12140f;border:1px dashed var(--bd)}.marker-studio-preview .pin-wrap{transform:scale(1.25);transform-origin:left center;flex:0 0 40px}.marker-studio-preview b,.marker-studio-preview small{display:block}.marker-studio-preview small{color:var(--mu);margin-top:3px}.marker-studio-saved{display:grid;gap:5px;margin:8px 0}.marker-studio-saved-row{display:flex;align-items:center;gap:6px}.marker-studio-saved-row>[data-studio-load]{flex:1;text-align:left}.marker-studio-note{font-size:11px;line-height:1.45;color:var(--mu);margin:8px 0}@media(max-width:780px){.marker-studio{padding:12px}.marker-studio-grid{grid-template-columns:1fr}.marker-studio-canvas-wrap{width:min(100%,360px)}}";
+  privateDesignStyle.textContent = ".private-form-note{font-size:12px;line-height:1.5;color:var(--mu);margin:8px 0}.private-template-preview{display:flex;align-items:center;gap:10px;padding:8px;margin:8px 0;border:1px dashed var(--bd);border-radius:9px;background:#12140f}.private-template-preview .pin-wrap{flex:0 0 30px}.private-template-copy{min-width:0}.private-template-copy b,.private-template-copy small{display:block}.private-template-copy small{color:var(--mu);font-size:11px;margin-top:3px}.marker-studio{height:100%;overflow:auto;padding:20px;max-width:1250px;margin:0 auto}.marker-studio>p{color:var(--mu);max-width:760px;line-height:1.55}.marker-studio-grid{display:grid;grid-template-columns:minmax(280px,350px) minmax(360px,1fr);gap:14px;align-items:start}.marker-studio-controls,.marker-studio-work{min-width:0}.marker-studio-preset-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin:8px 0 14px}.marker-studio-preset{display:flex;align-items:center;gap:7px;min-width:0;text-align:left;padding:6px;min-height:48px}.marker-studio-preset.on{border-color:var(--gd);color:var(--gd)}.marker-studio-preset__icon{flex:0 0 30px;width:30px;height:30px;overflow:hidden}.marker-studio-preset__icon .pin-wrap{transform:scale(.88);transform-origin:left top}.marker-studio .fi{margin:8px 0}.marker-studio .fi input,.marker-studio .fi textarea{width:100%}.marker-studio-tools{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.marker-studio-tools button.on{border-color:var(--gd);color:var(--gd);background:#242216}.marker-studio-canvas-wrap{width:min(100%,460px);aspect-ratio:1;margin:10px auto 14px;padding:12px;border:1px solid var(--bd);border-radius:14px;background:radial-gradient(circle at 50% 42%,#25261d,#11130f 70%);touch-action:none}.marker-studio-canvas{display:block;width:100%;height:100%;overflow:visible;touch-action:none}.marker-studio-canvas [data-studio-shape]{cursor:move}.marker-studio-selection{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.marker-studio-selection input[type=range]{width:110px}.marker-studio-selection>label{display:flex;align-items:center;gap:6px}.marker-studio-selection input[type=checkbox]{width:auto}.marker-studio-selection button:disabled{opacity:.45}.marker-studio-preview{display:flex;align-items:center;gap:12px;padding:10px;border-radius:10px;background:#12140f;border:1px dashed var(--bd)}.marker-studio-preview .pin-wrap{transform:scale(1.25);transform-origin:left center;flex:0 0 40px}.marker-studio-preview b,.marker-studio-preview small{display:block}.marker-studio-preview small{color:var(--mu);margin-top:3px}.marker-studio-saved{display:grid;gap:5px;margin:8px 0}.marker-studio-saved-row{display:flex;align-items:center;gap:6px}.marker-studio-saved-row>[data-studio-load]{flex:1;text-align:left}.marker-studio-note{font-size:11px;line-height:1.45;color:var(--mu);margin:8px 0}@media(max-width:780px){.marker-studio{padding:12px}.marker-studio-grid{grid-template-columns:1fr}.marker-studio-canvas-wrap{width:min(100%,360px)}}";
   document.head.appendChild(privateDesignStyle);
 
   function authApi() { return window.LLAuth || null; }
@@ -162,7 +338,8 @@
   }
 
   function privateIcon(marker) {
-    var color = validPrivateColor(marker.color), custom = markerDesignSvg(marker.symbol, 17);
+    var color = validPrivateColor(marker.color), packed = unpackMarkerDescription(marker.description);
+    var custom = markerDesignShapesSvg(packed.shapes || parseStudioDesign(marker.design), color, 17) || markerDesignSvg(marker.symbol, 17);
     if (custom) {
       var caption = String(marker.caption || "").trim().slice(0, 48);
       return L.divIcon({ className: "", html: '<div class="pin-wrap"><div class="pin" style="--pin-color:' + color + '">' + custom + '</div>' + (caption ? '<span class="pin-caption">' + esc(caption) + '</span>' : "") + '</div>', iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -14] });
@@ -172,9 +349,10 @@
   }
 
   function privatePopup(marker) {
-    var custom = markerDesignSvg(marker.symbol, 18);
+    var packed = unpackMarkerDescription(marker.description);
+    var custom = markerDesignShapesSvg(packed.shapes || parseStudioDesign(marker.design), validPrivateColor(marker.color), 18) || markerDesignSvg(marker.symbol, 18);
     var glyph = custom || ico(TYPES[marker.symbol] ? marker.symbol : "post", 15);
-    var html = '<div class="pp"><div class="ph2"><span class="li" style="color:' + validPrivateColor(marker.color) + '">' + glyph + '</span><div><b>' + esc(marker.title || "Личная метка") + '</b><small>Видно выбранным игрокам</small></div></div>' + (marker.description ? '<p>' + esc(marker.description) + "</p>" : "");
+    var html = '<div class="pp"><div class="ph2"><span class="li" style="color:' + validPrivateColor(marker.color) + '">' + glyph + '</span><div><b>' + esc(marker.title || "Личная метка") + '</b><small>Видно выбранным игрокам</small></div></div>' + (packed.description ? '<p>' + esc(packed.description) + "</p>" : "");
     if (isMasterNow()) html += '<small style="color:var(--mu)">Получателей: ' + (marker.visibleTo || []).length + '</small><br><button class="private-marker-delete" data-private-delete="' + esc(marker.id) + '">Удалить метку</button>';
     return html + "</div>";
   }
@@ -211,9 +389,10 @@
       var saved = JSON.parse(localStorage.getItem(PRIVATE_DESIGNS_KEY) || "[]");
       if (!Array.isArray(saved)) return [];
       return saved.slice(0, 30).filter(function (item) {
-        return item && /^custom-[a-z0-9-]{1,40}$/i.test(String(item.id || "")) && decodeMarkerDesign(item.symbol) && /^#[0-9a-f]{6}$/i.test(String(item.color || ""));
+        return item && /^custom-[a-z0-9-]{1,40}$/i.test(String(item.id || "")) && (parseStudioDesign(item.design) || decodeMarkerDesign(item.symbol)) && /^#[0-9a-f]{6}$/i.test(String(item.color || ""));
       }).map(function (item) {
-        return { id: String(item.id), name: String(item.name || "Свой шаблон").slice(0, 48), title: String(item.title || "Личная метка").slice(0, 100), description: String(item.description || "").slice(0, 1000), symbol: String(item.symbol), color: validPrivateColor(item.color), caption: String(item.caption || "").slice(0, 48) };
+        var shapes = parseStudioDesign(item.design) || decodeMarkerDesign(item.symbol) || [];
+        return { id: String(item.id), name: String(item.name || "Свой шаблон").slice(0, 48), title: String(item.title || "Личная метка").slice(0, 100), description: String(item.description || "").slice(0, 1000), symbol: String(item.symbol || "post"), design: serializeStudioDesign(shapes), color: validPrivateColor(item.color), caption: String(item.caption || "").slice(0, 48) };
       });
     } catch (error) { return []; }
   }
@@ -223,7 +402,8 @@
     privateForm.preset = template.id;
     privateForm.title = template.title || template.name || "Личная метка";
     privateForm.description = template.description || "";
-    privateForm.symbol = template.symbol;
+    privateForm.symbol = template.symbol || "post";
+    privateForm.design = template.design || serializeStudioDesign(decodeMarkerDesign(template.symbol) || []);
     privateForm.color = validPrivateColor(template.color);
     privateForm.caption = template.caption || "";
   }
@@ -240,7 +420,10 @@
     }).join("");
     var saved = loadCustomMarkerTemplates();
     var savedHtml = saved.length ? saved.map(function (item) { return '<div class="marker-studio-saved-row"><button type="button" data-studio-load="' + esc(item.id) + '">' + esc(item.name) + '</button><button type="button" data-studio-remove="' + esc(item.id) + '" aria-label="Удалить шаблон">×</button></div>'; }).join("") : '<div class="marker-studio-note">Сохранённые шаблоны появятся здесь.</div>';
-    return '<div class="marker-studio"><div class="eb">МАСТЕРСКАЯ · LAST LIGHT</div><h1>Редактор значков</h1><p>Соберите свой значок из простых фигур. Перетаскивайте их по эмблеме, меняйте размер и цвет, добавляйте подпись и описание. Шаблоны сохраняются в этом браузере.</p><div class="marker-studio-grid"><div class="card marker-studio-controls"><h3>Готовые шаблоны</h3><div class="marker-studio-preset-grid">' + presetCards + '</div><label class="fi">Название шаблона<input data-studio-field="name" maxlength="48" value="' + esc(studioState.name) + '"></label><label class="fi">Заголовок метки<input data-studio-field="title" maxlength="100" value="' + esc(studioState.title) + '"></label><label class="fi">Цвет<input type="color" data-studio-field="color" value="' + esc(validPrivateColor(studioState.color)) + '"></label><label class="fi">Короткая надпись на карте<input data-studio-field="caption" maxlength="48" value="' + esc(studioState.caption) + '" placeholder="Например: РАДИО"></label><label class="fi">Описание<textarea data-studio-field="description" rows="3" maxlength="1000">' + esc(studioState.description) + '</textarea></label><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="pr" type="button" data-studio-save>Сохранить шаблон</button><button type="button" data-studio-use>Сохранить и выбрать</button></div><div class="marker-studio-note">После выбора шаблона редактор карты откроется на личной метке, где можно указать получателей. Сам значок синхронизируется вместе с меткой.</div><h3 style="margin-top:18px">Мои шаблоны</h3><div class="marker-studio-saved">' + savedHtml + '</div></div><div class="card marker-studio-work"><h3>Рабочая область</h3><div class="marker-studio-tools"><button type="button" data-studio-tool="c" class="' + (studioTool === "c" ? "on" : "") + '">Круг</button><button type="button" data-studio-tool="s" class="' + (studioTool === "s" ? "on" : "") + '">Квадрат</button><button type="button" data-studio-tool="l" class="' + (studioTool === "l" ? "on" : "") + '">Палочка</button><button type="button" data-studio-tool="t" class="' + (studioTool === "t" ? "on" : "") + '">Треугольник</button><button type="button" data-studio-tool="d" class="' + (studioTool === "d" ? "on" : "") + '">Ромб</button><button type="button" data-studio-tool="x" class="' + (studioTool === "x" ? "on" : "") + '">Крест</button></div><div class="marker-studio-canvas-wrap"><svg id="marker-design-canvas" class="marker-studio-canvas" viewBox="0 0 100 100" role="img" aria-label="Поле сборки значка"></svg></div><div class="marker-studio-selection"><span data-studio-selection>Выберите фигуру или добавьте новую.</span><button type="button" data-studio-rotate="-1" title="Повернуть влево">↶</button><button type="button" data-studio-rotate="1" title="Повернуть вправо">↷</button><label>Размер <input type="range" id="studio-shape-size" min="3" max="18" value="10" ' + (studioState.selected < 0 ? "disabled" : "") + '></label><button type="button" data-studio-delete ' + (studioState.selected < 0 ? "disabled" : "") + '>Удалить фигуру</button></div><div class="marker-studio-preview" style="margin-top:14px">' + privateIcon({ symbol: encodeMarkerDesign(studioState.shapes), color: studioState.color, caption: studioState.caption }).options.html + '<span><b data-studio-preview-title>' + esc(studioState.title || "Личная метка") + '</b><small data-studio-preview-caption>' + esc(studioState.caption || "Без подписи на карте") + '</small></span></div></div></div></div>';
+    var selected = studioState.selected >= 0 ? studioState.shapes[studioState.selected] : null;
+    var design = serializeStudioDesign(studioState.shapes);
+    var legacy = encodeMarkerDesign(studioState.shapes);
+    return '<div class="marker-studio"><div class="eb">МАСТЕРСКАЯ · LAST LIGHT</div><h1>Редактор значков</h1><p>Соберите значок из готовых фигур или рисуйте мышью и пальцем. Шаблоны сохраняются в этом браузере.</p><div class="marker-studio-grid"><div class="card marker-studio-controls"><h3>Готовые шаблоны</h3><div class="marker-studio-preset-grid">' + presetCards + '</div><label class="fi">Название шаблона<input data-studio-field="name" maxlength="48" value="' + esc(studioState.name) + '"></label><label class="fi">Заголовок метки<input data-studio-field="title" maxlength="100" value="' + esc(studioState.title) + '"></label><label class="fi">Цвет<input type="color" data-studio-field="color" value="' + esc(validPrivateColor(studioState.color)) + '"></label><label class="fi">Короткая надпись на карте<input data-studio-field="caption" maxlength="48" value="' + esc(studioState.caption) + '" placeholder="Например: РАДИО"></label><label class="fi">Описание<textarea data-studio-field="description" rows="3" maxlength="1000">' + esc(studioState.description) + '</textarea></label><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="pr" type="button" data-studio-save>Сохранить шаблон</button><button type="button" data-studio-use>Сохранить и выбрать</button></div><div class="marker-studio-note">После выбора шаблона редактор карты откроется на личной метке, где можно указать получателей. Сам значок синхронизируется вместе с меткой.</div><h3 style="margin-top:18px">Мои шаблоны</h3><div class="marker-studio-saved">' + savedHtml + '</div></div><div class="card marker-studio-work"><h3>Рабочая область</h3><div class="marker-studio-tools"><button type="button" data-studio-tool="c" class="' + (studioTool === "c" ? "on" : "") + '">Круг</button><button type="button" data-studio-tool="s" class="' + (studioTool === "s" ? "on" : "") + '">Квадрат</button><button type="button" data-studio-tool="l" class="' + (studioTool === "l" ? "on" : "") + '">Палочка</button><button type="button" data-studio-tool="t" class="' + (studioTool === "t" ? "on" : "") + '">Треугольник</button><button type="button" data-studio-tool="d" class="' + (studioTool === "d" ? "on" : "") + '">Ромб</button><button type="button" data-studio-tool="x" class="' + (studioTool === "x" ? "on" : "") + '">Крест</button><button type="button" data-studio-tool="L" class="' + (studioTool === "L" ? "on" : "") + '">Прямая линия</button><button type="button" data-studio-tool="p" class="' + (studioTool === "p" ? "on" : "") + '">Кисть</button></div><div class="marker-studio-canvas-wrap"><svg id="marker-design-canvas" class="marker-studio-canvas" viewBox="0 0 100 100" role="img" aria-label="Поле сборки значка"></svg></div><div class="marker-studio-selection"><button type="button" data-studio-history="undo" ' + (!studioUndo.length ? "disabled" : "") + ' title="Отменить последнее изменение">↶ Назад</button><button type="button" data-studio-history="redo" ' + (!studioRedo.length ? "disabled" : "") + ' title="Повторить отменённое изменение">↷ Вперёд</button><span data-studio-selection style="flex:1">Выберите фигуру или инструмент.</span></div><div class="marker-studio-selection"><label>Кисть <input type="range" id="studio-brush-size" min="1" max="18" value="' + studioBrushSize + '" aria-label="Толщина кисти"></label><span data-studio-brush-value>' + studioBrushSize + '</span><label><input type="checkbox" data-studio-fill ' + (studioFill ? "checked" : "") + ' style="width:auto"> Заливка новых фигур</label></div><div class="marker-studio-selection"><label>Размер фигуры <input type="range" id="studio-shape-size" min="3" max="18" value="' + (selected ? selected.s : 10) + '" ' + (!selected ? "disabled" : "") + '></label><button type="button" data-studio-fill-selected ' + (!selected || selected.t === "p" || selected.t === "L" ? "disabled" : "") + '>' + (selected && selected.fill ? "Убрать заливку" : "Залить фигуру") + '</button><button type="button" data-studio-delete ' + (!selected ? "disabled" : "") + '>Удалить фигуру</button></div><div class="marker-studio-preview" style="margin-top:14px">' + privateIcon({ design: design, symbol: legacy, color: studioState.color, caption: studioState.caption }).options.html + '<span><b data-studio-preview-title>' + esc(studioState.title || "Личная метка") + '</b><small data-studio-preview-caption>' + esc(studioState.caption || "Без подписи на карте") + '</small></span></div></div></div></div>';
   }
 
   function renderStudioCanvas() {
@@ -248,23 +431,22 @@
     if (!svg) return;
     var color = validPrivateColor(studioState.color);
     var html = '<circle cx="50" cy="50" r="46" fill="#14150f" stroke="' + color + '" stroke-width="3"></circle>';
-    html += studioState.shapes.map(function (shape, index) {
-      var x = Math.round(shape.x), y = Math.round(shape.y), s = Math.max(3, Math.min(18, Number(shape.s) || 10)), angle = (Number(shape.r) || 0) * 45;
-      var attrs = 'data-studio-shape="' + index + '" fill="none" stroke="' + color + '" stroke-width="' + (index === studioState.selected ? 7 : 5) + '" stroke-linecap="round" stroke-linejoin="round"';
-      if (shape.t === "c") return '<circle ' + attrs + ' cx="' + x + '" cy="' + y + '" r="' + s + '"></circle>';
-      if (shape.t === "s") return '<rect ' + attrs + ' x="' + (x - s) + '" y="' + (y - s) + '" width="' + (s * 2) + '" height="' + (s * 2) + '" rx="2"></rect>';
-      if (shape.t === "l") { var dx = Math.round(s * Math.cos(angle * Math.PI / 180)), dy = Math.round(s * Math.sin(angle * Math.PI / 180)); return '<line ' + attrs + ' x1="' + (x - dx) + '" y1="' + (y - dy) + '" x2="' + (x + dx) + '" y2="' + (y + dy) + '"></line>'; }
-      if (shape.t === "t") return '<polygon ' + attrs + ' points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + (y + s) + ' ' + (x - s) + ',' + (y + s) + '" transform="rotate(' + angle + ' ' + x + ' ' + y + ')"></polygon>';
-      if (shape.t === "d") return '<polygon ' + attrs + ' points="' + x + ',' + (y - s) + ' ' + (x + s) + ',' + y + ' ' + x + ',' + (y + s) + ' ' + (x - s) + ',' + y + '"></polygon>';
-      return '<path ' + attrs + ' d="M' + (x - s) + ' ' + y + 'H' + (x + s) + 'M' + x + ' ' + (y - s) + 'V' + (y + s) + '"></path>';
-    }).join("");
+    html += studioState.shapes.map(function (shape, index) { return studioShapeMarkup(shape, color, index, index === studioState.selected); }).join("");
     svg.innerHTML = html;
     var selection = document.querySelector("[data-studio-selection]"), slider = document.getElementById("studio-shape-size");
-    if (selection) selection.textContent = studioState.selected >= 0 && studioState.shapes[studioState.selected] ? "Фигура " + (studioState.selected + 1) + " выбрана · перетащите её" : studioTool ? "Щёлкните по эмблеме, чтобы добавить фигуру" : "Выберите фигуру или добавьте новую.";
-    if (slider) { slider.disabled = studioState.selected < 0; if (studioState.selected >= 0 && studioState.shapes[studioState.selected]) slider.value = studioState.shapes[studioState.selected].s; }
-    var del = document.querySelector("[data-studio-delete]"); if (del) del.disabled = studioState.selected < 0;
+    var selected = studioState.selected >= 0 ? studioState.shapes[studioState.selected] : null;
+    if (selection) selection.textContent = selected ? "Фигура " + (studioState.selected + 1) + " выбрана · перетащите её" : studioTool === "p" ? "Рисуйте по полю, удерживая кнопку мыши или касаясь экрана" : studioTool === "L" ? "Потяните по полю, чтобы провести прямую линию" : studioTool ? "Щёлкните или потяните по полю, чтобы добавить фигуру" : "Выберите фигуру или инструмент.";
+    if (slider) { slider.disabled = !selected; if (selected) slider.value = selected.s; }
+    var brush = document.getElementById("studio-brush-size"); if (brush) brush.value = studioBrushSize;
+    var fill = document.querySelector("[data-studio-fill]"); if (fill) fill.checked = studioFill;
+    var del = document.querySelector("[data-studio-delete]"); if (del) del.disabled = !selected;
+    var fillSelected = document.querySelector("[data-studio-fill-selected]");
+    if (fillSelected) { fillSelected.disabled = !selected || selected.t === "p" || selected.t === "L"; fillSelected.textContent = selected && selected.fill ? "Убрать заливку" : "Залить фигуру"; }
+    var undo = document.querySelector('[data-studio-history="undo"]'), redo = document.querySelector('[data-studio-history="redo"]');
+    if (undo) undo.disabled = !studioUndo.length;
+    if (redo) redo.disabled = !studioRedo.length;
     var preview = document.querySelector(".marker-studio-preview");
-    if (preview) preview.innerHTML = privateIcon({ symbol: encodeMarkerDesign(studioState.shapes), color: color, caption: studioState.caption }).options.html + '<span><b data-studio-preview-title>' + esc(studioState.title || "Личная метка") + '</b><small data-studio-preview-caption>' + esc(studioState.caption || "Без подписи на карте") + '</small></span>';
+    if (preview) preview.innerHTML = privateIcon({ design: serializeStudioDesign(studioState.shapes), symbol: encodeMarkerDesign(studioState.shapes), color: color, caption: studioState.caption }).options.html + '<span><b data-studio-preview-title>' + esc(studioState.title || "Личная метка") + '</b><small data-studio-preview-caption>' + esc(studioState.caption || "Без подписи на карте") + '</small></span>';
   }
 
   function renderMarkerStudio() {
@@ -275,10 +457,11 @@
   }
 
   function loadStudioTemplate(template) {
-    var shapes = decodeMarkerDesign(template.symbol);
+    var shapes = parseStudioDesign(template.design) || decodeMarkerDesign(template.symbol);
     if (!shapes) return;
-    studioState = { id: template.id, name: template.name || "Свой шаблон", title: template.title || template.name || "Личная метка", description: template.description || "", symbol: template.symbol, color: validPrivateColor(template.color), caption: template.caption || "", shapes: shapes, selected: -1 };
+    studioState = { id: template.id, name: template.name || "Свой шаблон", title: template.title || template.name || "Личная метка", description: template.description || "", symbol: template.symbol || "post", color: validPrivateColor(template.color), caption: template.caption || "", shapes: shapes, selected: -1 };
     studioTool = "";
+    studioUndo = []; studioRedo = []; studioHistoryBaseline = studioSnapshot();
     renderMarkerStudio();
   }
 
@@ -286,17 +469,19 @@
     if (!studioState.shapes.length) { toast("Сначала добавьте на эмблему хотя бы одну фигуру.", "error"); return null; }
     var name = String(studioState.name || "").trim().slice(0, 48);
     if (!name) { toast("Введите название шаблона.", "error"); return null; }
+    var design = serializeStudioDesign(studioState.shapes);
+    if (!design) { toast("Не удалось сохранить рисунок. Удалите несколько фигур или точек и попробуйте снова.", "error"); return null; }
     var symbol = encodeMarkerDesign(studioState.shapes);
-    if (symbol.length > 32 || !decodeMarkerDesign(symbol)) { toast("Не удалось собрать значок. Удалите лишние фигуры и попробуйте снова.", "error"); return null; }
+    if (symbol.length > 32 || !decodeMarkerDesign(symbol)) symbol = "post";
     var saved = loadCustomMarkerTemplates(), id = /^custom-/.test(studioState.id) ? studioState.id : "custom-" + Date.now().toString(36);
-    var item = { id: id, name: name, title: String(studioState.title || name).trim().slice(0, 100) || name, description: String(studioState.description || "").trim().slice(0, 1000), symbol: symbol, color: validPrivateColor(studioState.color), caption: String(studioState.caption || "").trim().slice(0, 48) };
+    var item = { id: id, name: name, title: String(studioState.title || name).trim().slice(0, 100) || name, description: String(studioState.description || "").trim().slice(0, 1000), symbol: symbol, design: design, color: validPrivateColor(studioState.color), caption: String(studioState.caption || "").trim().slice(0, 48) };
     saved = saved.filter(function (old) { return old.id !== id; }); saved.unshift(item); saved = saved.slice(0, 30);
     try { localStorage.setItem(PRIVATE_DESIGNS_KEY, JSON.stringify(saved)); }
     catch (error) { toast("Шаблон не сохранился. Проверьте, что в браузере разрешено хранилище сайта.", "error", 8000); return null; }
     studioState.id = id;
+    studioHistoryBaseline = studioSnapshot();
     return item;
   }
-
   function studioPoint(event, svg) {
     var point = svg.createSVGPoint(); point.x = event.clientX; point.y = event.clientY;
     var local = point.matrixTransform(svg.getScreenCTM().inverse());
@@ -398,9 +583,10 @@
           var point = typeof EM.mouseEventToLatLng === "function" ? EM.mouseEventToLatLng(event) : EM.containerPointToLatLng(EM.mouseEventToContainerPoint(event));
           var recipients = privateForm.visibleTo.slice();
           if (!recipients.length) { toast("Сначала выберите хотя бы одного игрока справа.", "error"); return; }
+          var packedDescription = packMarkerDescription(privateForm.description, privateForm.design);
           authApi().createPrivateMarker({
-            x: sn(point.lng), y: sn(H - point.lat), title: privateForm.title, description: privateForm.description,
-            symbol: privateForm.symbol, color: privateForm.color, caption: privateForm.caption, visibleTo: recipients
+            x: sn(point.lng), y: sn(H - point.lat), title: privateForm.title, description: packedDescription,
+            symbol: privateForm.symbol || "post", color: privateForm.color, caption: privateForm.caption, visibleTo: recipients
           }).then(function () { toast("Личная метка сохранена и видна только выбранным игрокам.", "ok"); })
             .catch(function (error) { toast(error.message || "Не удалось сохранить личную метку.", "error", 9000); });
         } catch (error) { toast(error.message || "Не удалось определить место на карте.", "error"); }
@@ -516,14 +702,15 @@
       if (studioState.id === removeId) loadStudioTemplate(privatePresets[0]); else renderMarkerStudio();
       return;
     }
-    var rotate = button.getAttribute("data-studio-rotate");
-    if (rotate !== null && studioState.selected >= 0 && studioState.shapes[studioState.selected]) {
-      var shape = studioState.shapes[studioState.selected];
-      shape.r = ((Number(shape.r) || 0) + (Number(rotate) > 0 ? 1 : 3)) % 4;
-      renderStudioCanvas(); return;
+    var historyAction = button.getAttribute("data-studio-history");
+    if (historyAction) { stepStudioHistory(historyAction); return; }
+    if (button.hasAttribute("data-studio-fill-selected") && studioState.selected >= 0 && studioState.shapes[studioState.selected]) {
+      var selectedShape = studioState.shapes[studioState.selected];
+      if (selectedShape.t !== "p" && selectedShape.t !== "L") { selectedShape.fill = !selectedShape.fill; commitStudioHistory(); renderStudioCanvas(); }
+      return;
     }
     if (button.hasAttribute("data-studio-delete") && studioState.selected >= 0) {
-      studioState.shapes.splice(studioState.selected, 1); studioState.selected = -1; renderStudioCanvas();
+      studioState.shapes.splice(studioState.selected, 1); studioState.selected = -1; commitStudioHistory(); renderStudioCanvas();
     }
   });
 
@@ -540,21 +727,31 @@
       studioState.shapes[studioState.selected].s = Math.max(3, Math.min(18, Number(target.value) || 10));
       renderStudioCanvas();
     }
+    if (target.id === "studio-brush-size") { studioBrushSize = Math.max(1, Math.min(18, Number(target.value) || 4)); var brushValue = document.querySelector("[data-studio-brush-value]"); if (brushValue) brushValue.textContent = studioBrushSize; }
+  });
+  markerStudioRoot.addEventListener("change", function (event) {
+    var target = event.target;
+    if (target.hasAttribute("data-studio-field") || target.id === "studio-shape-size") commitStudioHistory();
+    if (target.hasAttribute("data-studio-fill")) studioFill = !!target.checked;
   });
   markerStudioRoot.addEventListener("pointerdown", function (event) {
     var svg = event.target.closest && event.target.closest("#marker-design-canvas");
     if (!svg) return;
     event.preventDefault();
-    var shapeElement = event.target.closest && event.target.closest("[data-studio-shape]"), point = studioPoint(event, svg);
-    if (shapeElement) {
-      studioState.selected = Number(shapeElement.getAttribute("data-studio-shape"));
-      studioDrag = { pointerId: event.pointerId };
-      if (svg.setPointerCapture) svg.setPointerCapture(event.pointerId);
-    } else if (studioTool) {
-      if (studioState.shapes.length >= 5) { toast("В одном значке можно разместить до пяти фигур.", "error"); return; }
-      studioState.shapes.push({ t: studioTool, x: point.x, y: point.y, s: 10, r: 0 });
+    var point = studioPoint(event, svg), shapeElement = event.target.closest && event.target.closest("[data-studio-shape]");
+    if (studioTool) {
+      if (studioState.shapes.length >= 20) { toast("В одном значке можно разместить до двадцати фигур.", "error"); return; }
+      var shape;
+      if (studioTool === "p") shape = { t: "p", points: [point], s: studioBrushSize, fill: false };
+      else if (studioTool === "L") shape = { t: "L", x1: point.x, y1: point.y, x2: point.x, y2: point.y, s: studioBrushSize, fill: false };
+      else shape = { t: studioTool, x: point.x, y: point.y, s: 10, r: 0, fill: studioFill };
+      studioState.shapes.push(shape);
       studioState.selected = studioState.shapes.length - 1;
-      studioDrag = { pointerId: event.pointerId };
+      studioDrag = { pointerId: event.pointerId, kind: studioTool === "p" ? "brush" : studioTool === "L" ? "line" : "shape", index: studioState.selected, lastPoint: point };
+      if (svg.setPointerCapture) svg.setPointerCapture(event.pointerId);
+    } else if (shapeElement) {
+      studioState.selected = Number(shapeElement.getAttribute("data-studio-shape"));
+      studioDrag = { pointerId: event.pointerId, kind: "move", index: studioState.selected, lastPoint: point };
       if (svg.setPointerCapture) svg.setPointerCapture(event.pointerId);
     } else {
       studioState.selected = -1;
@@ -563,15 +760,39 @@
     renderStudioCanvas();
   });
   markerStudioRoot.addEventListener("pointermove", function (event) {
-    if (!studioDrag || event.pointerId !== studioDrag.pointerId || studioState.selected < 0 || !studioState.shapes[studioState.selected]) return;
+    if (!studioDrag || event.pointerId !== studioDrag.pointerId) return;
     var svg = document.getElementById("marker-design-canvas"); if (!svg) return;
-    var point = studioPoint(event, svg);
-    studioState.shapes[studioState.selected].x = point.x; studioState.shapes[studioState.selected].y = point.y;
+    var point = studioPoint(event, svg), shape = studioState.shapes[studioDrag.index];
+    if (!shape) return;
+    if (studioDrag.kind === "move") {
+      moveStudioShape(shape, point.x - studioDrag.lastPoint.x, point.y - studioDrag.lastPoint.y);
+      studioDrag.lastPoint = point;
+    } else if (studioDrag.kind === "line") {
+      shape.x2 = point.x; shape.y2 = point.y;
+    } else if (studioDrag.kind === "brush") {
+      var dx = point.x - studioDrag.lastPoint.x, dy = point.y - studioDrag.lastPoint.y;
+      if (Math.sqrt(dx * dx + dy * dy) >= 1.2) { shape.points.push(point); studioDrag.lastPoint = point; }
+    }
     renderStudioCanvas();
   });
-  markerStudioRoot.addEventListener("pointerup", function (event) { if (studioDrag && event.pointerId === studioDrag.pointerId) studioDrag = null; });
-  markerStudioRoot.addEventListener("pointercancel", function () { studioDrag = null; });
-
+  function finishStudioPointer(event) {
+    if (!studioDrag || (event && event.pointerId !== studioDrag.pointerId)) return;
+    var shape = studioState.shapes[studioDrag.index];
+    if (studioDrag.kind === "brush" && shape && shape.points.length === 1) shape.points.push({ x: shape.points[0].x, y: shape.points[0].y });
+    studioDrag = null;
+    commitStudioHistory();
+    renderStudioCanvas();
+  }
+  markerStudioRoot.addEventListener("pointerup", finishStudioPointer);
+  markerStudioRoot.addEventListener("pointercancel", finishStudioPointer);
+  document.addEventListener("keydown", function (event) {
+    if (location.hash !== "#marker-studio" || !(event.ctrlKey || event.metaKey)) return;
+    var tag = (event.target.tagName || "").toUpperCase();
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || event.target.isContentEditable) return;
+    var key = String(event.key || "").toLowerCase();
+    if (key === "z") { event.preventDefault(); stepStudioHistory(event.shiftKey ? "redo" : "undo"); }
+    else if (key === "y") { event.preventDefault(); stepStudioHistory("redo"); }
+  });
   document.addEventListener("input", function (event) {
     var target = event.target;
     if (target.id === "pt-color") PT_COLOR = target.value;
