@@ -347,7 +347,7 @@
     dialog.showModal(); title.focus(); hydrateMedia(body);
   }
   function mount(card) {
-    var field = document.getElementById("wt"), publish = document.getElementById("wp");
+    var field = card.querySelector("#wt"), publish = card.querySelector("#wp");
     if (!field || !publish || card.querySelector("[data-write-order]")) return;
     field.hidden = true; publish.hidden = true;
     var button = document.createElement("button");
@@ -358,7 +358,8 @@
       openEditor(field, async function (value) {
         await window.LLAuth.createWallEntry(value);
         window.LLWallDraft.clear("post", "main"); field.value = "";
-        rWall(); toast("Приказ отправлен мастеру.", "ok");
+        if (window.LLSquadOrders) window.LLSquadOrders.refresh(); else rWall();
+        toast("Приказ отправлен мастеру.", "ok");
       }, false);
     };
   }
@@ -369,16 +370,18 @@
     openEditor(field, async function (value) {
       await window.LLAuth.updateWallEntry(entry.id, entry.kind, value);
       window.LLWallDraft.clear("order-edit", entry.id);
-      renderCloudWall(); toast("Приказ обновлён.", "ok");
+      renderCloudWall(); if (window.LLSquadOrders) window.LLSquadOrders.refresh();
+      toast("Приказ обновлён.", "ok");
     }, true);
   }
   document.addEventListener("click", function (event) {
     var button = event.target.closest("[data-article-verdict]");
     if (!button || !window.isMaster || !isMaster()) return;
     var id = button.dataset.articleVerdict, field = document.createElement("textarea");
-    var order = window.LLAuth.wallEntries().find(function (entry) { return entry.id === id && entry.kind === "order"; });
+    var order = window.LLSquadOrders && window.LLSquadOrders.find(id) || window.LLAuth.wallEntries().find(function (entry) { return entry.id === id && entry.kind === "order"; });
     field.dataset.mediaViewer = order && order.authorUid || "";
     window.LLWallDraft.bind(field, "verdict", id);
+    if (!field.value && order && order.verdict) field.value = order.verdict;
     openEditor(field, async function (value) {
       var decision = document.getElementById("verdict-decision").value;
       await window.LLAuth.decideOrder(id, decision, value);
@@ -386,6 +389,7 @@
       if (typeof renderCloudVerdicts === "function") renderCloudVerdicts();
       renderCloudWall(); toast("Вердикт опубликован.", "ok");
     }, false, true);
+    if (order && ["Принято", "Отклонено"].includes(order.status)) document.getElementById("verdict-decision").value = order.status;
   });
   window.LLArticles = { render: render, mount: mount, edit: edit, parse: parse };
 }());

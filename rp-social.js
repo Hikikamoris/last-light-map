@@ -307,12 +307,7 @@
     });
   }
   window.addEventListener("hashchange", function () { if (location.hash !== "#wall") stopWallComments(); });
-  var playerWallSection = "news";
-  window.playerWallEntryVisible = function (entry) {
-    if (isMasterNow()) return true;
-    var order = entry.kind === "order" || (!entry.cloud && entry.kind !== "event" && entry.s !== "Событие");
-    return playerWallSection === "orders" ? order : !order;
-  };
+  window.playerWallEntryVisible = function (entry) { return entry.cloud ? entry.kind !== "order" : entry.kind === "event" || entry.s === "Событие"; };
   var privateMapLayer = L.layerGroup().addTo(map);
   var privateEditorLayer = null;
   var privateEditorCaptureBound = false;
@@ -433,7 +428,6 @@
   }
 
   function renderChannelFilter() {
-    if (!isMasterNow() && playerWallSection === "orders") return;
     var statusFilter = document.getElementById("wf");
     if (!statusFilter) return;
     var current = document.getElementById("wall-channel-filter");
@@ -660,7 +654,7 @@
 
   function renderMasterWallComposer() {
     if (!isMasterNow()) return;
-    var form = document.getElementById("wt");
+    var form = document.getElementById("wall").querySelector("#wt");
     if (!form) return;
     var card = form.closest(".card");
     if (!card) return;
@@ -692,10 +686,9 @@
       decorateChannelFilter(channelFilter);
     }
     entries = entries.filter(window.playerWallEntryVisible);
-    if ((isMasterNow() || playerWallSection === "orders") && wf !== "all") entries = entries.filter(function (p) { return p.status === wf; });
-    if ((isMasterNow() || playerWallSection === "news") && wallChannel !== "all") entries = entries.filter(function (p) { return p.kind === "broadcast" && (p.channel || "События") === wallChannel; });
+    if (wallChannel !== "all") entries = entries.filter(function (p) { return p.kind === "broadcast" && (p.channel || "События") === wallChannel; });
     if (!entries.length) {
-      var emptyText = !isMasterNow() && playerWallSection === "orders" ? "Приказов с выбранным статусом пока нет." : "Публикаций в выбранном канале пока нет.";
+      var emptyText = "Публикаций в выбранном канале пока нет.";
       box.innerHTML = '<div class="card" style="color:var(--mu)">' + emptyText + '</div>'; return;
     }
     box.innerHTML = entries.map(function (p) {
@@ -713,55 +706,19 @@
         html += '<div class="rx">' + '<button data-cloud-comments="' + esc(p.id) + '" data-collection="' + (broadcast ? "broadcasts" : "posts") + '" style="color:var(--mu)">Комментарий</button></div><div id="comments-' + esc(p.id) + '"></div>';
       }
       if (isMasterNow() && p.kind === "order" && status === "Ожидает вердикта") html += '<div style="margin-top:10px"><button class="pr" data-article-verdict="' + esc(p.id) + '">Написать вердикт</button></div>';
-      if (p.verdict) html += '<div class="vd"><b>Вердикт мастера</b><br>' + (window.LLArticles ? window.LLArticles.render(p.verdict) : esc(p.verdict)) + '</div>';
+      if (p.verdict) html += '<div class="vd">' + (window.LLArticles ? window.LLArticles.render(p.verdict) : esc(p.verdict)) + '</div>';
       return html + "</div>";
     }).join("");
     if (location.hash === "#wall") watchVisibleComments(box);
     if (window.LLWallDraft) entries.forEach(function (p) { var verdict = document.getElementById("wall-verdict-" + p.id); if (verdict) window.LLWallDraft.bind(verdict, "wall-verdict", p.id); });
   }
 
-  function renderPlayerWallSections() {
-    if (isMasterNow()) return;
-    var root = document.getElementById("wall"), heading = root.querySelector("h1");
-    if (!heading) return;
-    var tabs = document.createElement("div");
-    tabs.className = "tabs";
-    tabs.style.cssText = "max-width:760px;margin:14px auto";
-    tabs.setAttribute("aria-label", "Разделы стены");
-    tabs.innerHTML = [["news", "Новости и слухи"], ["orders", "Приказы"]].map(function (tab) {
-      return '<button type="button" data-wall-section="' + tab[0] + '" class="' + (playerWallSection === tab[0] ? "on" : "") +
-        '" aria-pressed="' + (playerWallSection === tab[0]) + '">' + tab[1] + '</button>';
-    }).join("");
-    heading.after(tabs);
-    var filter = document.getElementById("wf"), card = filter && filter.closest(".card");
-    if (!card) return;
-    var orders = playerWallSection === "orders";
-    card.querySelector("h3").textContent = orders ? "Приказы отряда" : "Новости и слухи";
-    card.querySelector("h3").nextElementSibling.textContent = orders
-      ? "Отправляйте приказы и читайте вердикты мастера. Записи видны вам и мастерам."
-      : "События мира, радиопереговоры, слухи и объявления.";
-    filter.hidden = !orders;
-    if (orders) {
-      var eventOption = filter.querySelector('[value="Событие"]');
-      if (eventOption) eventOption.remove();
-      if (wf === "Событие") { wf = "all"; filter.value = "all"; }
-      var allOption = filter.querySelector('[value="all"]');
-      if (allOption) allOption.textContent = "Все приказы";
-      var input = document.getElementById("wt"), publish = document.getElementById("wp");
-      if (input) input.placeholder = "Опишите приказ отряда…";
-      if (publish) publish.textContent = "Отправить приказ";
-      if (window.LLArticles) window.LLArticles.mount(card);
-    } else {
-      card.querySelectorAll("#wt,#wi,#wp,#wall-draft-status,.auth-note").forEach(function (el) { el.hidden = true; });
-    }
-  }
-  document.getElementById("wall").addEventListener("click", function (event) {
-    var tab = event.target.closest("[data-wall-section]");
-    if (!tab || isMasterNow()) return;
-    playerWallSection = tab.getAttribute("data-wall-section") === "orders" ? "orders" : "news";
-    rWall();
-  });
-  rWall = function () { baseWall(); renderMasterWallComposer(); renderPlayerWallSections(); renderChannelFilter(); renderWall(); };
+  rWall = function () {
+    wf = "all"; baseWall(); renderMasterWallComposer();
+    var filter = document.getElementById("wf");
+    if (filter) { filter.hidden = true; var picker = filter.nextElementSibling; if (picker && picker.matches(".channel-picker")) picker.hidden = true; }
+    renderChannelFilter(); renderWall();
+  };
   renderCloudWall = renderWall;
   drawMap = function () { baseDrawMap(); drawPrivateMarkers(); };
   drawLeg = function () { baseDrawLeg(); renderPrivateLegend(); };

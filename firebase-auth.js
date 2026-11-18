@@ -507,6 +507,16 @@ const api = {
       reviewedBy: state.user.uid, updatedAt: serverTimestamp()
     });
   },
+  watchPlayerOrders(uid, receive, fail) {
+    if (!db || !state.user) return () => {};
+    if (state.user.uid !== uid && !["master", "owner"].includes(state.profile?.role)) throw new Error("Нет доступа к приказам другого игрока.");
+    return onSnapshot(query(collection(db, "orders"), where("authorUid", "==", uid)), (snap) => {
+      const entries = snap.docs.map((entry) => ({ ...entry.data(), id: entry.id, kind: "order", cloud: true }));
+      const timestamp = (entry) => entry.createdAt?.toMillis ? entry.createdAt.toMillis() : 0;
+      entries.sort((a, b) => timestamp(b) - timestamp(a));
+      receive(entries);
+    }, fail);
+  },
   watchComments(postId, collectionName, receive, fail) {
     if (!db) return () => {};
     const parent = collectionName === "broadcasts" ? "broadcasts" : "posts";
