@@ -364,6 +364,7 @@ const api = {
     if (state.profile?.role !== "player" || state.profile?.status !== "active") {
       throw new Error("Игровые действия откроются после одобрения заявки мастером.");
     }
+    if (body.length > 24000) throw new Error("Максимум 24 000 символов вместе с оформлением приказа.");
     const squad = sharedSquads.find((item) => item && item.ownerUid === user.uid && String(item.id) === String(state.profile.squadId))
       || sharedSquads.find((item) => item && item.ownerUid === user.uid);
     await setDoc(doc(collection(db, "orders")), {
@@ -431,7 +432,7 @@ const api = {
     if (!db || !user) throw new Error("Сначала войдите через Google.");
     const body = String(text || "").trim();
     if (!body) throw new Error("Текст публикации не может быть пустым.");
-    if (body.length > 12000) throw new Error("Текст слишком длинный (максимум 12 000 символов).");
+    if (body.length > (kind === "order" ? 24000 : 12000)) throw new Error("Текст слишком длинный. Для приказа доступно 24 000 символов.");
     const isMaster = ["master", "owner"].includes(state.profile?.role);
     const parent = ({ order: "orders", post: "posts", broadcast: "broadcasts" })[kind];
     if (!parent) throw new Error("Неизвестный тип записи.");

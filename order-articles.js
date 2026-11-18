@@ -57,6 +57,20 @@
       if (node.nodeType !== 1 || ["SCRIPT", "STYLE", "IFRAME", "OBJECT"].includes(node.tagName)) return;
       if (!allowed.has(node.tagName)) { Array.from(node.childNodes).forEach(function (child) { append(child, parent); }); return; }
       var element = document.createElement(node.tagName.toLowerCase());
+      if (["TD", "TH"].includes(node.tagName)) {
+        ["colspan", "rowspan"].forEach(function (name) {
+          var span = Math.max(1, Math.min(name === "colspan" ? 30 : 100, Number(node.getAttribute(name)) || 1));
+          if (span > 1) element.setAttribute(name, Math.floor(span));
+        });
+      }
+      [["TABLE", "tableWidth", 20, 100, "width", "%"], ["TR", "rowHeight", 24, 400, "height", "px"],
+        ["TD", "cellWidth", 40, 800, "width", "px"], ["TH", "cellWidth", 40, 800, "width", "px"]].forEach(function (dimension) {
+        if (node.tagName !== dimension[0] || !node.dataset[dimension[1]]) return;
+        var value = Math.round(Math.max(dimension[2], Math.min(dimension[3], Number(node.dataset[dimension[1]]))));
+        if (!Number.isFinite(value)) return;
+        element.dataset[dimension[1]] = value;
+        element.style[dimension[4]] = value + dimension[5];
+      });
       if (node.tagName === "A") {
         var href = safeUrl(node.getAttribute("href"));
         if (href) { element.href = href; element.target = "_blank"; element.rel = "noopener noreferrer"; }
@@ -132,7 +146,6 @@
     if (!dialog || !dialog.open || !body) return;
     var toolbar = dialog.querySelector(".order-writing-tools"), plus = dialog.querySelector("[data-order-plus]");
     toolbar.hidden = true; plus.hidden = true;
-    if (body.hidden) return;
     var current = window.getSelection();
     if (!current.rangeCount || !body.contains(current.anchorNode) || !body.contains(current.focusNode)) return;
     var range = current.getRangeAt(0), bounds = dialog.getBoundingClientRect();
@@ -152,6 +165,10 @@
     }
   }
   document.addEventListener("selectionchange", rememberSelection);
+  document.addEventListener("pointerdown", function (event) {
+    var menu = document.querySelector("#order-writing-dialog .order-insert-menu");
+    if (menu && !event.target.closest(".order-insert-menu,[data-order-plus]")) menu.hidden = true;
+  }, true);
   function focusSelection() {
     var body = document.getElementById("order-writing-body");
     body.focus();
@@ -175,7 +192,7 @@
     var note = document.getElementById("order-writing-note");
     var status = draftField.dataset.wallDraftStatus && document.getElementById(draftField.dataset.wallDraftStatus);
     note.textContent = status ? status.textContent : "Черновик сохранён в этом браузере на 12 часов.";
-    if (value.length > 12000) note.textContent = "Приказ слишком большой. Сократите его до 12 000 символов вместе с оформлением.";
+    if (value.length > 24000) note.textContent = "Приказ слишком большой. Сократите его до 24 000 символов вместе с оформлением.";
   }
   function openEditor(field, onSave, editing) {
     var dialog = document.getElementById("order-writing-dialog");
@@ -188,19 +205,20 @@
     var tools = [["bold","Ж"],["italic","К"],["underline","Ч"],["strikeThrough","S̶"],["h2","H₂"],["h3","H₃"],["p","Текст"],["blockquote","❝"],["link","Ссылка"]];
     var inserts = [["image","Фото"],["gif","GIF"],["video","Видео"],["audio","Аудио"],["table","Таблица"],["divider","Разделитель"],["insertUnorderedList","• Список"],["insertOrderedList","1. Список"]];
     dialog.innerHTML = '<div class="order-writing-top"><h2>' + (editing ? "Редактировать приказ" : "Новый приказ") +
-      '</h2><button type="button" data-order-preview>Предпросмотр</button><button type="button" data-order-close>Закрыть</button></div>' +
+      '</h2><button type="button" data-order-close>Закрыть</button></div>' +
       '<div class="order-writing-tools" hidden role="toolbar" aria-label="Оформление выделенного текста">' +
       tools.map(function (tool) { return '<button type="button" data-order-tool="'+tool[0]+'">'+tool[1]+'</button>'; }).join("") +
       '</div><button type="button" data-order-plus aria-label="Добавить блок" hidden>+</button><div class="order-insert-menu" hidden>' +
       inserts.map(function (tool) { return '<button type="button" data-order-tool="'+tool[0]+'">'+tool[1]+'</button>'; }).join("") +
       '</div><input type="file" id="order-media-picker" hidden><div class="order-writing-paper"><label class="order-title-label">Заголовок приказа<input id="order-writing-title" maxlength="160" placeholder="Название операции"></label>' +
       '<div id="order-writing-body" class="order-article-body" contenteditable="true" role="textbox" aria-label="Текст приказа" aria-multiline="true"></div>' +
-      '<div id="order-writing-preview" hidden></div></div><div class="order-writing-bottom"><span id="order-writing-note" role="status">Черновик хранится 12 часов после последнего изменения.</span>' +
+      '</div><div class="order-writing-bottom"><span id="order-writing-note" role="status">Черновик хранится 12 часов после последнего изменения.</span>' +
       '<button type="button" class="pr" data-order-submit>'+(editing?"Сохранить изменения":"Отправить приказ")+'</button></div>';
     var title = document.getElementById("order-writing-title"), body = document.getElementById("order-writing-body");
     title.value = article.title; body.innerHTML = article.html || "<p><br></p>";
     dialog.oninput = saveDraft;
-    dialog.onscroll = positionTools;
+    dialog.onscroll = function () { dialog.querySelector(".order-insert-menu").hidden = true; positionTools(); };
+    if (window.LLOrderTables) window.LLOrderTables.install(dialog, body, saveDraft);
     var picker = dialog.querySelector("#order-media-picker"), insertMenu = dialog.querySelector(".order-insert-menu");
     async function insertFiles(files) {
       var insertion = selection && selection.cloneRange();
@@ -246,6 +264,7 @@
     });
     dialog.onclose = function () { draftField = null; activeSave = null; selection = null; };
     dialog.oncancel = function (event) {
+      if (!insertMenu.hidden) { insertMenu.hidden = true; event.preventDefault(); return; }
       if (dialog.querySelector("[data-order-submit]").disabled || pendingUploads) event.preventDefault();
     };
     dialog.querySelector(".order-writing-tools").onpointerdown = function (event) { if (event.target.closest("button")) event.preventDefault(); };
@@ -262,16 +281,6 @@
         return;
       }
       if (button.hasAttribute("data-order-close")) { dialog.close(); return; }
-      if (button.hasAttribute("data-order-preview")) {
-        var preview = document.getElementById("order-writing-preview"), paper = body.parentElement;
-        preview.hidden = !preview.hidden;
-        body.hidden = !preview.hidden; title.closest("label").hidden = !preview.hidden;
-        dialog.querySelector(".order-writing-tools").hidden = true;
-        dialog.querySelector("[data-order-plus]").hidden = true; insertMenu.hidden = true;
-        preview.innerHTML = render(articleValue());
-        button.textContent = preview.hidden ? "Предпросмотр" : "Вернуться к тексту";
-        return;
-      }
       var command = button.dataset.orderTool;
       if (command) {
         insertMenu.hidden = true;
@@ -304,7 +313,7 @@
         if (!title.value.trim() || (!body.textContent.trim() && !body.querySelector("img,video,audio"))) {
           toast("Укажите заголовок и содержание приказа.", "error"); return;
         }
-        if (value.length > 12000) { toast("Сократите приказ до 12 000 символов вместе с оформлением.", "error"); return; }
+        if (value.length > 24000) { toast("Сократите приказ до 24 000 символов вместе с оформлением.", "error"); return; }
         saveDraft();
         button.disabled = true; dialog.querySelector("[data-order-close]").disabled = true;
         try { await activeSave(value); dialog.close(); }
@@ -322,12 +331,10 @@
     button.type = "button"; button.className = "pr"; button.dataset.writeOrder = "";
     button.textContent = field.value ? "Продолжить черновик приказа" : "Написать приказ";
     field.before(button);
-    var upload = document.getElementById("wi");
-    if (upload) upload.setAttribute("aria-label", "Обложка приказа");
     button.onclick = function () {
       openEditor(field, async function (value) {
-        await window.LLAuth.createWallEntry(value, PIMG || "");
-        window.LLWallDraft.clear("post", "main"); PIMG = null; field.value = "";
+        await window.LLAuth.createWallEntry(value);
+        window.LLWallDraft.clear("post", "main"); field.value = "";
         rWall(); toast("Приказ отправлен мастеру.", "ok");
       }, false);
     };

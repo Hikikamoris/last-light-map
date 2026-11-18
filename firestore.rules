@@ -176,7 +176,7 @@ service cloud.firestore {
         request.resource.data.authorUid == request.auth.uid &&
         request.resource.data.status == 'Ожидает вердикта' &&
         request.resource.data.squadId == request.auth.uid &&
-        request.resource.data.text is string &&
+        request.resource.data.text is string && request.resource.data.text.size() <= 24000 &&
         request.resource.data.keys().hasOnly([
           'authorUid', 'authorName', 'squadId', 'squadName', 'text', 'imageUrl', 'status', 'createdAt', 'updatedAt'
         ]);
@@ -184,7 +184,7 @@ service cloud.firestore {
         (hasProfile() && role() == 'player' && resource.data.authorUid == request.auth.uid &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'updatedAt']) &&
           request.resource.data.text is string && request.resource.data.text.size() > 0 &&
-          request.resource.data.text.size() <= 12000);
+          request.resource.data.text.size() <= 24000);
       allow delete: if isMaster() || (hasProfile() && role() == 'player' && resource.data.authorUid == request.auth.uid);
     }
 
