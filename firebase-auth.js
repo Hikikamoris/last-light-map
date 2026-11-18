@@ -2,7 +2,7 @@ let initializeApp, getAuth, GoogleAuthProvider, onAuthStateChanged;
 let signInWithPopup, signInWithRedirect, getRedirectResult, signOut;
 let browserLocalPersistence, browserSessionPersistence, setPersistence;
 let getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs;
-let query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch, runTransaction;
+let query, orderBy, limit, where, onSnapshot, serverTimestamp, runTransaction;
 
 const state = { ready: false, configured: false, user: null, profile: null, application: null, error: "", notice: "" };
 let auth = null;
@@ -16,6 +16,7 @@ let stopBroadcasts = null;
 let stopPrivateMarkers = null;
 let stopGameClock = null;
 let stopWorld = null;
+let sharedSquads = [];
 let wallEntries = [];
 let postEntries = [];
 let orderEntries = [];
@@ -73,8 +74,10 @@ function watchGameClock() {
 function watchWorld() {
   if (stopWorld) stopWorld();
   stopWorld = onSnapshot(doc(db, "public", "world"), (snap) => {
+    const world = snap.exists() ? snap.data() : null;
+    sharedSquads = Array.isArray(world?.squads) ? world.squads : [];
     window.dispatchEvent(new CustomEvent("ll:world-data", {
-      detail: snap.exists() ? { exists: true, ...snap.data() } : null
+      detail: world ? { exists: true, ...world } : null
     }));
   }, (error) => {
     window.dispatchEvent(new CustomEvent("ll:world-data", { detail: { error: error.message || "Не удалось загрузить общую карту." } }));
@@ -94,6 +97,32 @@ function worldDocument(world) {
     throw new Error("Общая карта слишком большая для одной записи. Уменьшите число объектов или разделите их.");
   }
   return { ...data, version: 1, updatedBy: state.user.uid, updatedAt: serverTimestamp() };
+}
+
+function newApplicationSquad(squad) {
+  const { id, n, l, c, x, y } = squad;
+  const name = String(n || "").trim();
+  const leader = String(l || "").trim();
+  if (!Number.isSafeInteger(id) || id < 1 || !name || name.length > 100 || !leader || leader.length > 100) {
+    throw new Error("Проверьте название и имя главы отряда.");
+  }
+  if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || !/^#[0-9a-f]{6}$/i.test(c)) {
+    throw new Error("Проверьте цвет и координаты отряда на карте.");
+  }
+  const count = (value, fallback) => Number.isSafeInteger(value) && value >= 0 ? value : fallback;
+  return {
+    id, n: name, l: leader, c, x, y,
+    r: {
+      f: count(squad.r?.f, 1), food: count(squad.r?.food, 20), water: count(squad.r?.water, 20),
+      ammo: count(squad.r?.ammo, 30), mats: count(squad.r?.mats, 10), meds: count(squad.r?.meds, 3)
+    },
+    b: {
+      farm: count(squad.b?.farm, 0), well: count(squad.b?.well, 0),
+      shop: count(squad.b?.shop, 0), wall: count(squad.b?.wall, 0)
+    },
+    mor: Math.min(100, count(squad.mor, 70)), lvl: Math.max(1, count(squad.lvl, 1)),
+    set: Boolean(squad.set), territoryRadius: Math.max(60, Math.min(350, count(squad.territoryRadius, 145)))
+  };
 }
 
 function publish() {
@@ -285,12 +314,24 @@ const api = {
     if ((state.profile && state.profile.status === "active") || state.application?.status === "pending") {
       throw new Error("Заявка уже отправлена или доступ уже одобрен.");
     }
-    const name = String(application.name || "").trim();
-    const callSign = String(application.callSign || "").trim();
-    const members = Array.isArray(application.members) ? application.members.slice(0, 8) : [];
-    if (!name || !callSign || !members.length || members.some((m) => !String(m.n || "").trim() || !String(m.spec || "").trim())) {
-      throw new Error("Заполните название отряда, позывной и данные бойцов.");
+    const field = (value, maxLength) => String(value ?? "").trim().slice(0, maxLength);
+    const name = field(application.name, 80);
+    const callSign = field(application.callSign, 80);
+    const entries = application.members;
+    if (!name || !callSign) throw new Error("Укажите название отряда и позывной главы.");
+    if (!Array.isArray(entries) || entries.length < 1 || entries.length > 8) {
+      throw new Error("Укажите главу отряда и до семи бойцов.");
     }
+    const members = entries.map((member, index) => {
+      const n = field(member?.n, 100);
+      const bio = field(member?.bio, 2000);
+      if (!n || !bio) throw new Error(index === 0
+        ? "Укажите имя и описание персонажа, за которого будете играть."
+        : `Укажите имя и описание бойца №${index}.`);
+      const age = Number(member?.age || 0);
+      if (!Number.isInteger(age) || age < 0 || age > 130) throw new Error("Укажите возраст от 1 до 130 лет или оставьте поле пустым.");
+      return { n, bio, age, sex: field(member?.sex, 40), spec: field(member?.spec, 100), inv: field(member?.inv, 2000) };
+    });
     await setDoc(doc(db, "applications", user.uid), {
       applicantUid: user.uid,
       submittedBy: user.uid,
@@ -323,9 +364,12 @@ const api = {
     if (state.profile?.role !== "player" || state.profile?.status !== "active") {
       throw new Error("Игровые действия откроются после одобрения заявки мастером.");
     }
+    const squad = sharedSquads.find((item) => item && item.ownerUid === user.uid && String(item.id) === String(state.profile.squadId))
+      || sharedSquads.find((item) => item && item.ownerUid === user.uid);
     await setDoc(doc(collection(db, "orders")), {
-      authorUid: user.uid, authorName: state.application?.callSign || "Игрок", squadId: state.profile.squadId || user.uid,
-      squadName: state.application?.squadName || "Отряд", text: body, imageUrl: imageUrl || "",
+      // The existing rules use this order field as another author UID. The assigned squad ID lives in the profile.
+      authorUid: user.uid, authorName: squad?.l || state.application?.callSign || "Игрок", squadId: user.uid,
+      squadName: squad?.n || state.application?.squadName || "Отряд", text: body, imageUrl: imageUrl || "",
       status: "Ожидает вердикта", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
     });
   },
@@ -439,25 +483,72 @@ const api = {
     const snap = await getDocs(query(collection(db, "applications"), orderBy("submittedAt", "desc")));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
-  async decideApplication(uid, decision, reason = "") {
+  async assignApplication(uid, assignment) {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Нет прав мастера.");
+    const masterUid = state.user.uid;
+    const existingId = String(assignment?.squadId ?? "");
+    const newSquad = assignment?.squad ? newApplicationSquad(assignment.squad) : null;
+    if ((!existingId && !newSquad) || (existingId && newSquad)) throw new Error("Выберите существующий отряд или создайте новый.");
     const appRef = doc(db, "applications", uid);
     const userRef = doc(db, "users", uid);
-    const batch = writeBatch(db);
-    batch.update(appRef, {
-      status: decision,
-      decisionReason: decision === "rejected" ? String(reason).trim() : "",
-      reviewedBy: state.user.uid,
-      reviewedAt: serverTimestamp(),
-      updatedAt: serverTimestamp()
+    const worldRef = doc(db, "public", "world");
+    return runTransaction(db, async (transaction) => {
+      const app = (await transaction.get(appRef)).data();
+      if (app?.applicantUid !== uid || !["pending", "approved"].includes(app.status)) {
+        throw new Error("Заявка больше не доступна для назначения.");
+      }
+      const world = (await transaction.get(worldRef)).data();
+      if (!Array.isArray(world?.squads)) throw new Error("Сначала опубликуйте общую карту во вкладке «Отряды».");
+      const squads = world.squads.slice();
+      if (squads.some((squad) => squad?.ownerUid === uid)) {
+        throw new Error("У этого игрока уже есть отряд. Обновите список заявок.");
+      }
+
+      let assigned;
+      if (newSquad) {
+        if (squads.some((squad) => squad && String(squad.id) === String(newSquad.id))) {
+          throw new Error("Такой номер отряда уже занят. Повторите создание.");
+        }
+        assigned = { ...newSquad, ownerUid: uid, reg: "approved", npc: 0 };
+        squads.push(assigned);
+      } else {
+        const index = squads.findIndex((squad) => squad && String(squad.id) === existingId);
+        if (index === -1) throw new Error("Выбранный отряд больше не существует.");
+        if (squads[index].ownerUid) throw new Error("Выбранный отряд уже закреплён за другим игроком.");
+        assigned = { ...squads[index], ownerUid: uid, reg: "approved", npc: 0 };
+        squads[index] = assigned;
+      }
+
+      transaction.update(worldRef, { squads, updatedBy: masterUid, updatedAt: serverTimestamp() });
+      transaction.update(appRef, {
+        status: "approved", decisionReason: "", reviewedBy: masterUid,
+        reviewedAt: serverTimestamp(), updatedAt: serverTimestamp()
+      });
+      transaction.update(userRef, {
+        status: "active", squadId: String(assigned.id), updatedBy: masterUid, updatedAt: serverTimestamp()
+      });
+      return assigned;
     });
-    batch.update(userRef, {
-      status: decision === "approved" ? "active" : "visitor",
-      squadId: decision === "approved" ? uid : "",
-      updatedBy: state.user.uid,
-      updatedAt: serverTimestamp()
+  },
+  async decideApplication(uid, decision, reason = "") {
+    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Нет прав мастера.");
+    if (decision !== "rejected") throw new Error("Для одобрения заявки создайте или выберите отряд игрока.");
+    const decisionReason = String(reason).trim();
+    if (!decisionReason) throw new Error("Укажите причину отказа.");
+    const masterUid = state.user.uid;
+    const appRef = doc(db, "applications", uid);
+    const userRef = doc(db, "users", uid);
+    await runTransaction(db, async (transaction) => {
+      const app = (await transaction.get(appRef)).data();
+      if (app?.applicantUid !== uid || app.status !== "pending") throw new Error("Эта заявка уже рассмотрена.");
+      transaction.update(appRef, {
+        status: "rejected", decisionReason, reviewedBy: masterUid,
+        reviewedAt: serverTimestamp(), updatedAt: serverTimestamp()
+      });
+      transaction.update(userRef, {
+        status: "visitor", squadId: "", updatedBy: masterUid, updatedAt: serverTimestamp()
+      });
     });
-    await batch.commit();
   },
   async listJournal() {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Журнал доступен только мастерам.");
@@ -508,7 +599,7 @@ if (!isUsableConfig(config)) {
     ]);
     ({ initializeApp } = appSdk);
     ({ getAuth, GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, browserLocalPersistence, browserSessionPersistence, setPersistence } = authSdk);
-    ({ getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, orderBy, limit, where, onSnapshot, serverTimestamp, writeBatch, runTransaction } = firestoreSdk);
+    ({ getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, query, orderBy, limit, where, onSnapshot, serverTimestamp, runTransaction } = firestoreSdk);
     const app = initializeApp(config);
     auth = getAuth(app);
     try {
