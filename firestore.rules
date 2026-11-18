@@ -188,6 +188,33 @@ service cloud.firestore {
       allow delete: if isMaster() || (hasProfile() && role() == 'player' && resource.data.authorUid == request.auth.uid);
     }
 
+    match /orderMedia/{mediaId} {
+      function canReadMedia() {
+        return isMaster() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      }
+      allow read: if canReadMedia();
+      allow create: if (isActivePlayer() || isMaster()) &&
+        request.resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.ready == false &&
+        request.resource.data.bytes is int && request.resource.data.bytes > 0 &&
+        request.resource.data.bytes <= 12582912 &&
+        request.resource.data.count is int && request.resource.data.count > 0 &&
+        request.resource.data.count <= 48 &&
+        request.resource.data.mime is string && request.resource.data.name is string &&
+        request.resource.data.keys().hasOnly(['ownerUid', 'mime', 'name', 'bytes', 'count', 'ready', 'createdAt']);
+      allow update: if signedIn() && resource.data.ownerUid == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ready']) &&
+        request.resource.data.ready == true;
+      allow delete: if isMaster() || (signedIn() && resource.data.ownerUid == request.auth.uid);
+      match /chunks/{chunkId} {
+        function media() { return get(/databases/$(database)/documents/orderMedia/$(mediaId)).data; }
+        allow read: if isMaster() || (signedIn() && media().ownerUid == request.auth.uid);
+        allow create: if signedIn() && media().ownerUid == request.auth.uid && media().ready == false &&
+          request.resource.data.keys().hasOnly(['data']) &&
+          request.resource.data.data is string && request.resource.data.data.size() <= 400000;
+        allow delete: if isMaster() || (signedIn() && media().ownerUid == request.auth.uid);
+      }
+    }
     match /journal/{entryId} {
       allow read: if isMaster();
       allow write: if false;

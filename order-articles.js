@@ -3,6 +3,45 @@
   var prefix = "LLARTICLE1\n";
   var allowed = new Set(["P", "BR", "STRONG", "B", "EM", "I", "U", "S", "STRIKE", "H2", "H3", "BLOCKQUOTE", "UL", "OL", "LI", "A", "IMG", "HR", "TABLE", "TBODY", "TR", "TD", "TH", "VIDEO", "AUDIO", "DIV"]);
   var activeSave = null, draftField = null, selection = null;
+  var pendingUploads = 0, mediaCache = new Map(), mediaUser = null;
+
+  function hydrateMedia(root) {
+    root.querySelectorAll("[data-order-media]").forEach(function (element) {
+      if (element.dataset.mediaLoading || element.getAttribute("src")) return;
+      var api = window.LLAuth, id = element.dataset.orderMedia;
+      if (!api || !/^[a-zA-Z0-9]{10,40}$/.test(id)) return;
+      element.dataset.mediaLoading = "true";
+      var uid = window.LLAuthState && window.LLAuthState.user && window.LLAuthState.user.uid;
+      var key = uid + ":" + id;
+      if (!mediaCache.has(key)) {
+        mediaCache.set(key, api.readArticleMedia(id).then(function (blob) { return URL.createObjectURL(blob); }));
+      }
+      mediaCache.get(key).then(function (url) {
+        if (element.isConnected && uid === mediaUser) element.src = url;
+      }).catch(function () {
+        mediaCache.delete(key);
+        element.dataset.mediaLoading = "error";
+        if (!element.isConnected || element.nextElementSibling && element.nextElementSibling.classList.contains("order-media-error")) return;
+        var error = document.createElement("span");
+        error.className = "order-media-error";
+        error.textContent = "Вложение недоступно. ";
+        var retry = document.createElement("button"); retry.type = "button"; retry.textContent = "Повторить";
+        retry.onclick = function () { element.removeAttribute("data-media-loading"); error.remove(); hydrateMedia(element.parentElement); };
+        error.appendChild(retry); element.after(error);
+      });
+    });
+  }
+  new MutationObserver(function () { hydrateMedia(document); }).observe(document.body, { childList: true, subtree: true });
+  window.addEventListener("ll:auth-state", function () {
+    var uid = window.LLAuthState && window.LLAuthState.user && window.LLAuthState.user.uid;
+    if (uid !== mediaUser) {
+      mediaCache.forEach(function (promise) { promise.then(function (url) { URL.revokeObjectURL(url); }).catch(function () {}); });
+      mediaCache.clear(); mediaUser = uid;
+      document.querySelectorAll("[data-order-media]").forEach(function (el) { el.removeAttribute("src"); el.removeAttribute("data-media-loading"); });
+      document.querySelectorAll(".order-media-error").forEach(function (el) { el.remove(); });
+    }
+    hydrateMedia(document);
+  });
 
   function safeUrl(value) {
     try {
@@ -23,9 +62,11 @@
         if (href) { element.href = href; element.target = "_blank"; element.rel = "noopener noreferrer"; }
       }
       if (["IMG", "VIDEO", "AUDIO"].includes(node.tagName)) {
+        var mediaId = node.getAttribute("data-order-media");
         var src = safeUrl(node.getAttribute("src"));
-        if (!src) return;
-        element.src = src;
+        if (mediaId && /^[a-zA-Z0-9]{10,40}$/.test(mediaId)) element.dataset.orderMedia = mediaId;
+        else if (src) element.src = src;
+        else return;
         if (node.tagName === "IMG") { element.alt = node.getAttribute("alt") || ""; element.loading = "lazy"; }
         else { element.controls = true; element.preload = "none"; }
       }
@@ -84,6 +125,31 @@
   function rememberSelection() {
     var current = window.getSelection(), body = document.getElementById("order-writing-body");
     if (body && current.rangeCount && body.contains(current.anchorNode) && body.contains(current.focusNode)) selection = current.getRangeAt(0).cloneRange();
+    positionTools();
+  }
+  function positionTools() {
+    var dialog = document.getElementById("order-writing-dialog"), body = document.getElementById("order-writing-body");
+    if (!dialog || !dialog.open || !body) return;
+    var toolbar = dialog.querySelector(".order-writing-tools"), plus = dialog.querySelector("[data-order-plus]");
+    toolbar.hidden = true; plus.hidden = true;
+    if (body.hidden) return;
+    var current = window.getSelection();
+    if (!current.rangeCount || !body.contains(current.anchorNode) || !body.contains(current.focusNode)) return;
+    var range = current.getRangeAt(0), bounds = dialog.getBoundingClientRect();
+    var rect = range.getBoundingClientRect();
+    if (!current.isCollapsed && current.toString().trim()) {
+      toolbar.hidden = false;
+      toolbar.style.left = Math.max(bounds.left + 8, Math.min(rect.left, bounds.right - toolbar.offsetWidth - 8)) + "px";
+      toolbar.style.top = Math.max(bounds.top + 55, rect.top - toolbar.offsetHeight - 8) + "px";
+    } else if (current.isCollapsed) {
+      var node = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+      var block = node.closest("p,div,li,h2,h3");
+      if (!block || !body.contains(block) || block.textContent.trim() || block.querySelector("img,video,audio,table")) return;
+      rect = block.getBoundingClientRect();
+      plus.hidden = false;
+      plus.style.left = Math.max(bounds.left + 8, rect.left - 36) + "px";
+      plus.style.top = Math.max(bounds.top + 58, rect.top) + "px";
+    }
   }
   document.addEventListener("selectionchange", rememberSelection);
   function focusSelection() {
@@ -119,45 +185,101 @@
     if (dialog.open) return;
     draftField = field; activeSave = onSave; selection = null;
     var article = parse(field.value) || { title: "", html: plainHtml(field.value) };
-    var tools = [["bold","Ж"],["italic","К"],["underline","Ч"],["strikeThrough","Зачеркнуть"],["h2","Заголовок"],["h3","Подзаголовок"],["p","Текст"],["blockquote","Цитата"],["insertUnorderedList","• Список"],["insertOrderedList","1. Список"],["link","Ссылка"],["image","Изображение / GIF"],["video","Видео"],["audio","Аудио"],["table","Таблица"],["divider","Разделитель"],["undo","↶"],["redo","↷"]];
+    var tools = [["bold","Ж"],["italic","К"],["underline","Ч"],["strikeThrough","S̶"],["h2","H₂"],["h3","H₃"],["p","Текст"],["blockquote","❝"],["link","Ссылка"]];
+    var inserts = [["image","Фото"],["gif","GIF"],["video","Видео"],["audio","Аудио"],["table","Таблица"],["divider","Разделитель"],["insertUnorderedList","• Список"],["insertOrderedList","1. Список"]];
     dialog.innerHTML = '<div class="order-writing-top"><h2>' + (editing ? "Редактировать приказ" : "Новый приказ") +
       '</h2><button type="button" data-order-preview>Предпросмотр</button><button type="button" data-order-close>Закрыть</button></div>' +
-      '<div class="order-writing-tools" role="toolbar" aria-label="Оформление приказа">' +
+      '<div class="order-writing-tools" hidden role="toolbar" aria-label="Оформление выделенного текста">' +
       tools.map(function (tool) { return '<button type="button" data-order-tool="'+tool[0]+'">'+tool[1]+'</button>'; }).join("") +
-      '</div><div class="order-writing-paper"><label class="order-title-label">Заголовок приказа<input id="order-writing-title" maxlength="160" placeholder="Название операции"></label>' +
+      '</div><button type="button" data-order-plus aria-label="Добавить блок" hidden>+</button><div class="order-insert-menu" hidden>' +
+      inserts.map(function (tool) { return '<button type="button" data-order-tool="'+tool[0]+'">'+tool[1]+'</button>'; }).join("") +
+      '</div><input type="file" id="order-media-picker" hidden><div class="order-writing-paper"><label class="order-title-label">Заголовок приказа<input id="order-writing-title" maxlength="160" placeholder="Название операции"></label>' +
       '<div id="order-writing-body" class="order-article-body" contenteditable="true" role="textbox" aria-label="Текст приказа" aria-multiline="true"></div>' +
       '<div id="order-writing-preview" hidden></div></div><div class="order-writing-bottom"><span id="order-writing-note" role="status">Черновик хранится 12 часов после последнего изменения.</span>' +
       '<button type="button" class="pr" data-order-submit>'+(editing?"Сохранить изменения":"Отправить приказ")+'</button></div>';
     var title = document.getElementById("order-writing-title"), body = document.getElementById("order-writing-body");
-    title.value = article.title; body.innerHTML = article.html;
+    title.value = article.title; body.innerHTML = article.html || "<p><br></p>";
     dialog.oninput = saveDraft;
+    dialog.onscroll = positionTools;
+    var picker = dialog.querySelector("#order-media-picker"), insertMenu = dialog.querySelector(".order-insert-menu");
+    async function insertFiles(files) {
+      var insertion = selection && selection.cloneRange();
+      pendingUploads++;
+      var submit = dialog.querySelector("[data-order-submit]"), close = dialog.querySelector("[data-order-close]");
+      submit.disabled = close.disabled = true;
+      document.getElementById("order-writing-note").textContent = "Загружаем вложение…";
+      try {
+        for (var file of Array.from(files)) {
+          var media = await window.LLAuth.uploadArticleMedia(file);
+          if (insertion && body.contains(insertion.commonAncestorContainer)) selection = insertion;
+          focusSelection();
+          var tag = media.mime.startsWith("image/") ? "img" : media.mime.startsWith("video/") ? "video" : "audio";
+          var element = document.createElement(tag);
+          element.dataset.orderMedia = media.id;
+          if (tag === "img") element.alt = media.name;
+          else { element.controls = true; element.preload = "none"; }
+          document.execCommand("insertHTML", false, element.outerHTML + "<p><br></p>");
+          rememberSelection(); insertion = selection && selection.cloneRange();
+          saveDraft(); hydrateMedia(body);
+        }
+      } catch (error) {
+        var message = error.code === "permission-denied"
+          ? "Firebase пока запрещает загрузку. Мастеру нужно опубликовать правила orderMedia."
+          : error.message || "Не удалось загрузить файл.";
+        toast(message, "error", 12000);
+        document.getElementById("order-writing-note").textContent = message;
+      } finally {
+        pendingUploads--;
+        submit.disabled = close.disabled = pendingUploads > 0;
+        picker.value = "";
+      }
+    }
+    picker.onchange = function () { if (picker.files.length) insertFiles(picker.files); };
     body.addEventListener("paste", function (event) {
       event.preventDefault();
       var clipboard = event.clipboardData;
+      rememberSelection();
+      if (clipboard.files.length) { insertFiles(clipboard.files); return; }
       var html = clipboard.getData("text/html");
       document.execCommand("insertHTML", false, html ? clean(html) : plainHtml(clipboard.getData("text/plain")));
       saveDraft();
     });
     dialog.onclose = function () { draftField = null; activeSave = null; selection = null; };
     dialog.oncancel = function (event) {
-      if (dialog.querySelector("[data-order-submit]").disabled) event.preventDefault();
+      if (dialog.querySelector("[data-order-submit]").disabled || pendingUploads) event.preventDefault();
     };
-    dialog.querySelector(".order-writing-tools").onmousedown = function (event) { if (event.target.closest("button")) event.preventDefault(); };
+    dialog.querySelector(".order-writing-tools").onpointerdown = function (event) { if (event.target.closest("button")) event.preventDefault(); };
+    insertMenu.onpointerdown = function (event) { if (event.target.closest("button")) event.preventDefault(); };
+    dialog.querySelector("[data-order-plus]").onpointerdown = function (event) { event.preventDefault(); };
     dialog.onclick = async function (event) {
       var button = event.target.closest("button");
       if (!button) return;
+      if (button.hasAttribute("data-order-plus")) {
+        insertMenu.hidden = !insertMenu.hidden;
+        var plusRect = button.getBoundingClientRect(), dialogRect = dialog.getBoundingClientRect();
+        insertMenu.style.left = Math.max(dialogRect.left + 8, Math.min(plusRect.left, dialogRect.right - 300)) + "px";
+        insertMenu.style.top = Math.min(plusRect.bottom + 6, window.innerHeight - 170) + "px";
+        return;
+      }
       if (button.hasAttribute("data-order-close")) { dialog.close(); return; }
       if (button.hasAttribute("data-order-preview")) {
         var preview = document.getElementById("order-writing-preview"), paper = body.parentElement;
         preview.hidden = !preview.hidden;
         body.hidden = !preview.hidden; title.closest("label").hidden = !preview.hidden;
-        dialog.querySelector(".order-writing-tools").hidden = !preview.hidden;
+        dialog.querySelector(".order-writing-tools").hidden = true;
+        dialog.querySelector("[data-order-plus]").hidden = true; insertMenu.hidden = true;
         preview.innerHTML = render(articleValue());
         button.textContent = preview.hidden ? "Предпросмотр" : "Вернуться к тексту";
         return;
       }
       var command = button.dataset.orderTool;
       if (command) {
+        insertMenu.hidden = true;
+        if (["image", "gif", "audio", "video"].includes(command)) {
+          if (pendingUploads) return;
+          picker.accept = command === "image" ? "image/jpeg,image/png,image/webp" : command === "gif" ? "image/gif" : command + "/*";
+          picker.click(); return;
+        }
         focusSelection();
         if (["h2","h3","p","blockquote"].includes(command)) document.execCommand("formatBlock", false, command);
         else if (["link","image","audio","video"].includes(command)) {
@@ -190,7 +312,7 @@
         finally { button.disabled = false; dialog.querySelector("[data-order-close]").disabled = false; }
       }
     };
-    dialog.showModal(); title.focus();
+    dialog.showModal(); title.focus(); hydrateMedia(body);
   }
   function mount(card) {
     var field = document.getElementById("wt"), publish = document.getElementById("wp");

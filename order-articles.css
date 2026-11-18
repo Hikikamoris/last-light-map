@@ -2,7 +2,17 @@
 #order-writing-dialog::backdrop{background:#050705d9}
 .order-writing-top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:8px;padding:12px 18px;background:var(--pn);border-bottom:1px solid var(--bd)}
 .order-writing-top h2{margin:0 auto 0 0;font-size:22px}
-.order-writing-tools{display:flex;flex-wrap:wrap;gap:5px;padding:12px 18px;border-bottom:1px solid var(--bd);background:#1b1d16}
+.order-writing-tools{position:fixed;z-index:4;display:flex;gap:3px;max-width:calc(100vw - 24px);overflow-x:auto;padding:5px;border:1px solid #756536;border-radius:10px;background:#24261c;box-shadow:0 6px 24px #0009}
+.order-writing-tools button{flex:0 0 auto;padding:5px 9px;font-size:14px}
+.order-writing-tools [data-order-tool=bold]{font-weight:800}
+.order-writing-tools [data-order-tool=italic]{font-style:italic}
+.order-writing-tools [data-order-tool=underline]{text-decoration:underline}
+[data-order-plus]{position:fixed;z-index:3;width:30px;height:30px;min-height:30px!important;padding:0;border:1px solid #756536;border-radius:50%;color:var(--gd);background:#24261c;font-size:22px}
+.order-insert-menu{position:fixed;z-index:5;display:flex;flex-wrap:wrap;gap:6px;width:min(300px,calc(100vw - 24px));padding:9px;border:1px solid #756536;border-radius:12px;background:#24261c;box-shadow:0 8px 30px #0009}
+.order-insert-menu button{flex:1 1 40%;min-height:36px;font-size:13px}
+#order-writing-body p{min-height:1.8em}
+.order-media-error{display:block;padding:8px;color:var(--mu);font-size:12px}
+[data-order-media]:not([src]){display:block;min-height:80px;width:100%;border:1px dashed #756536;border-radius:8px}
 .order-writing-paper{max-width:760px;margin:20px auto;padding:20px 28px;min-height:45vh}
 .order-title-label{display:block;color:var(--mu);font-size:12px}
 #order-writing-title{display:block;width:100%;margin:8px 0 22px;font:600 30px Oswald,sans-serif;background:transparent;border:0;border-bottom:1px solid var(--bd);padding:8px 0;border-radius:0}

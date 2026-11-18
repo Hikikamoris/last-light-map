@@ -373,6 +373,59 @@ const api = {
       status: "Ожидает вердикта", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
     });
   },
+  async uploadArticleMedia(file) {
+    if (!db || !state.user || !(["master", "owner"].includes(state.profile?.role) || state.profile?.status === "active")) {
+      throw new Error("Загрузка доступна после назначения отряда.");
+    }
+    const mime = String(file.type || "").toLowerCase();
+    if (!/^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg|quicktime)|audio\/(mpeg|mp3|mp4|ogg|wav|x-wav|webm|aac|flac))$/.test(mime)) {
+      throw new Error("Выберите фотографию, GIF, видео MP4/WebM или аудиофайл.");
+    }
+    if (!file.size || file.size > 12 * 1024 * 1024) throw new Error("Размер одного вложения — до 12 МБ.");
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = () => reject(new Error("Не удалось прочитать файл."));
+      reader.readAsDataURL(file);
+    });
+    const ownerUid = state.user.uid;
+    const ref = doc(collection(db, "orderMedia"));
+    const count = Math.ceil(data.length / 400000);
+    await setDoc(ref, {
+      ownerUid, mime, name: String(file.name || "Вложение").slice(0, 160),
+      bytes: file.size, count, ready: false, createdAt: serverTimestamp()
+    });
+    try {
+      const results = await Promise.allSettled(Array.from({ length: count }, (_, index) =>
+        setDoc(doc(db, "orderMedia", ref.id, "chunks", String(index)), {
+          data: data.slice(index * 400000, (index + 1) * 400000)
+        })));
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure) throw failure.reason;
+      await updateDoc(ref, { ready: true });
+      return { id: ref.id, mime, name: file.name || "Вложение" };
+    } catch (error) {
+      await Promise.allSettled(Array.from({ length: count }, (_, index) =>
+        deleteDoc(doc(db, "orderMedia", ref.id, "chunks", String(index)))));
+      await deleteDoc(ref).catch(() => {});
+      throw error;
+    }
+  },
+  async readArticleMedia(id) {
+    if (!db || !state.user) throw new Error("Войдите, чтобы открыть вложение.");
+    const snap = await getDoc(doc(db, "orderMedia", id));
+    if (!snap.exists() || !snap.data().ready) throw new Error("Вложение недоступно.");
+    const meta = snap.data();
+    if (!Number.isInteger(meta.count) || meta.count < 1 || meta.count > 48) throw new Error("Повреждённое вложение.");
+    const chunks = await Promise.all(Array.from({ length: meta.count }, (_, index) =>
+      getDoc(doc(db, "orderMedia", id, "chunks", String(index)))));
+    const parts = chunks.map((chunk) => {
+      if (!chunk.exists()) throw new Error("Не удалось прочитать часть вложения.");
+      const raw = atob(chunk.data().data);
+      return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+    });
+    return new Blob(parts, { type: meta.mime });
+  },
   async updateWallEntry(id, kind, text) {
     const user = state.user;
     if (!db || !user) throw new Error("Сначала войдите через Google.");
