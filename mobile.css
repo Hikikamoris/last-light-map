@@ -78,8 +78,8 @@ html,body{overflow-x:hidden;scrollbar-color:#625638 #141510;scrollbar-width:thin
  #est{left:8px;bottom:67px;max-width:calc(100% - 100px);font-size:11px}
  #emod{padding:12px}
  #emod .card{width:100%;max-height:calc(100% - 24px);overflow:auto}
- #v-marker-studio{overflow:hidden}
- .marker-studio{height:100%;padding:12px;overflow:auto;overscroll-behavior-y:contain}
+ #v-marker-studio{height:auto;min-height:100%;overflow:visible}#marker-studio-app{min-height:100%}#v-marker-studio #marker-studio-app .marker-studio{height:auto;min-height:100%;overflow:visible;overscroll-behavior-y:auto}
+ .marker-studio{height:auto;min-height:100%;padding:12px;overflow:visible;overscroll-behavior-y:auto}
  .marker-studio>p{font-size:14px}
  .marker-studio-grid{display:flex!important;flex-direction:column;gap:10px}
  .marker-studio-work{order:-1}
@@ -131,3 +131,4 @@ html,body{overflow-x:hidden;scrollbar-color:#625638 #141510;scrollbar-width:thin
   .einsp{max-height:min(38dvh,330px)}
  }
 }
+
