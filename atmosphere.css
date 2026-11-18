@@ -1,0 +1,9 @@
+/* Quiet scenery behind reading pages; map and drawing tools keep their own canvas. */
+main.atmosphere-on{isolation:isolate}
+.site-atmosphere{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;visibility:hidden;opacity:0;transition:opacity 1.4s ease,visibility 1.4s}
+.atmosphere-on .site-atmosphere{visibility:visible;opacity:1}
+.site-atmosphere__scene{position:absolute;inset:0;background-size:cover;background-position:center;filter:saturate(.55) brightness(.68);opacity:0;transition:opacity 3s ease}
+.site-atmosphere__scene.is-current{opacity:1}
+.site-atmosphere::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0d0e0c55 0%,#0d0e0caa 15%,#0d0e0cf0 33%,#0d0e0cf0 67%,#0d0e0caa 85%,#0d0e0c55 100%),linear-gradient(180deg,#0d0e0c99 0%,transparent 30%,#0d0e0c66 100%)}
+@media(max-width:700px){.site-atmosphere::after{background:linear-gradient(90deg,#0d0e0cc7,#0d0e0ce8 25%,#0d0e0ce8 75%,#0d0e0cc7),linear-gradient(180deg,#0d0e0c99,transparent 60%,#0d0e0c88)}}
+@media(prefers-reduced-motion:reduce){.site-atmosphere,.site-atmosphere__scene{transition:none}}

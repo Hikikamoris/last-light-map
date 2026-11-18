@@ -49,13 +49,24 @@
     }
     box.innerHTML = '<div class="card order-composer"><h3>Приказы отряда</h3><p>Приказы и вердикты видны вам и мастерам.</p>'+
       '<textarea id="wt" hidden></textarea><button id="wp" hidden></button><div id="wall-draft-status"></div>'+
-      '<label>Показать<select id="squad-order-filter"><option value="all">Все приказы</option><option>Ожидает вердикта</option><option>Принято</option><option>Отклонено</option></select></label></div>'+
+      '<div class="order-filter"><span id="squad-order-filter-label">Показать</span><details class="channel-picker" id="squad-order-filter"><summary aria-labelledby="squad-order-filter-label squad-order-filter-value"><span id="squad-order-filter-value"></span></summary><div></div></details></div></div>'+
       '<div id="squad-order-list"></div>';
     var field = document.getElementById("wt");
     window.LLWallDraft.bind(field, "post", "main", "wall-draft-status");
     window.LLArticles.mount(box.querySelector(".order-composer"));
-    var filter = document.getElementById("squad-order-filter"); filter.value = orderFilter;
-    filter.onchange = function () { orderFilter = filter.value; drawPlayerList(); };
+    var filter = document.getElementById("squad-order-filter"), value = document.getElementById("squad-order-filter-value");
+    var options = [["all", "Все приказы"], ["Ожидает вердикта", "Ожидает вердикта"], ["Принято", "Принято"], ["Отклонено", "Отклонено"]];
+    options.forEach(function (option) {
+      var button = document.createElement("button"); button.type = "button"; button.textContent = option[1];
+      button.classList.toggle("on", orderFilter === option[0]); button.setAttribute("aria-pressed", String(orderFilter === option[0]));
+      if (orderFilter === option[0]) value.textContent = option[1];
+      button.onclick = function () {
+        orderFilter = option[0]; value.textContent = option[1]; filter.open = false;
+        Array.from(filter.querySelectorAll("button")).forEach(function (item) { item.classList.toggle("on", item === button); item.setAttribute("aria-pressed", String(item === button)); });
+        drawPlayerList(); filter.querySelector("summary").focus();
+      };
+      filter.querySelector("div").appendChild(button);
+    });
     watch(LLAuthState.user.uid); drawPlayerList();
   }
   function groups() {
@@ -137,4 +148,3 @@
   if (location.hash === "#state") rState();
   if (location.hash === "#admin" && at === "Вердикты") renderMaster();
 }());
-
