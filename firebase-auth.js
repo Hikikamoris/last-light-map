@@ -374,7 +374,7 @@ const api = {
       status: "Ожидает вердикта", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
     });
   },
-  async uploadArticleMedia(file) {
+  async uploadArticleMedia(file, readerUid = "") {
     if (!db || !state.user || !(["master", "owner"].includes(state.profile?.role) || state.profile?.status === "active")) {
       throw new Error("Загрузка доступна после назначения отряда.");
     }
@@ -390,10 +390,11 @@ const api = {
       reader.readAsDataURL(file);
     });
     const ownerUid = state.user.uid;
+    if (readerUid && !["master", "owner"].includes(state.profile?.role)) throw new Error("Назначать получателя вложения может только мастер.");
     const ref = doc(collection(db, "orderMedia"));
     const count = Math.ceil(data.length / 400000);
     await setDoc(ref, {
-      ownerUid, mime, name: String(file.name || "Вложение").slice(0, 160),
+      ownerUid, ...(readerUid ? { readerUid: String(readerUid).slice(0, 128) } : {}), mime, name: String(file.name || "Вложение").slice(0, 160),
       bytes: file.size, count, ready: false, createdAt: serverTimestamp()
     });
     try {
@@ -505,6 +506,13 @@ const api = {
       status: String(status), verdict: String(verdict || ""),
       reviewedBy: state.user.uid, updatedAt: serverTimestamp()
     });
+  },
+  watchComments(postId, collectionName, receive, fail) {
+    if (!db) return () => {};
+    const parent = collectionName === "broadcasts" ? "broadcasts" : "posts";
+    return onSnapshot(query(collection(db, parent, postId, "comments"), orderBy("createdAt", "asc")), (snap) => {
+      receive(snap.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
+    }, fail);
   },
   async listComments(postId, collectionName = "posts") {
     if (!db) return [];
@@ -638,11 +646,6 @@ const api = {
         status: "visitor", squadId: "", updatedBy: masterUid, updatedAt: serverTimestamp()
       });
     });
-  },
-  async listJournal() {
-    if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Журнал доступен только мастерам.");
-    const snap = await getDocs(query(collection(db, "journal"), orderBy("createdAt", "desc"), limit(200)));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
   async listUsers() {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Список игроков доступен только мастерам.");

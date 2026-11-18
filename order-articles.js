@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   var prefix = "LLARTICLE1\n";
-  var allowed = new Set(["P", "BR", "STRONG", "B", "EM", "I", "U", "S", "STRIKE", "H2", "H3", "BLOCKQUOTE", "UL", "OL", "LI", "A", "IMG", "HR", "TABLE", "TBODY", "TR", "TD", "TH", "VIDEO", "AUDIO", "DIV"]);
+  var allowed = new Set(["P", "BR", "STRONG", "B", "EM", "I", "U", "S", "STRIKE", "H2", "H3", "BLOCKQUOTE", "UL", "OL", "LI", "A", "IMG", "HR", "TABLE", "COLGROUP", "COL", "TBODY", "TR", "TD", "TH", "VIDEO", "AUDIO", "DIV"]);
   var activeSave = null, draftField = null, selection = null;
   var pendingUploads = 0, mediaCache = new Map(), mediaUser = null;
 
@@ -58,15 +58,22 @@
       if (!allowed.has(node.tagName)) { Array.from(node.childNodes).forEach(function (child) { append(child, parent); }); return; }
       var element = document.createElement(node.tagName.toLowerCase());
       if (["TD", "TH"].includes(node.tagName)) {
+        if (/^#[0-9a-f]{6}$/i.test(node.dataset.cellColor || "")) {
+          element.dataset.cellColor = node.dataset.cellColor; element.style.backgroundColor = node.dataset.cellColor;
+        }
         ["colspan", "rowspan"].forEach(function (name) {
           var span = Math.max(1, Math.min(name === "colspan" ? 30 : 100, Number(node.getAttribute(name)) || 1));
           if (span > 1) element.setAttribute(name, Math.floor(span));
         });
       }
-      [["TABLE", "tableWidth", 20, 100, "width", "%"], ["TR", "rowHeight", 24, 400, "height", "px"],
+      if (node.tagName === "TABLE" && /^(\d+(\.\d+)?,){0,29}\d+(\.\d+)?$/.test(node.dataset.columnWidths || "")) {
+        element.dataset.columnWidths = node.dataset.columnWidths;
+      }
+      [["TABLE", "tableWidth", 20, 100, "width", "%"], ["COL", "columnWidth", 0.1, 100, "width", "%"], ["TR", "rowHeight", 24, 400, "height", "px"],
         ["TD", "cellWidth", 40, 800, "width", "px"], ["TH", "cellWidth", 40, 800, "width", "px"]].forEach(function (dimension) {
         if (node.tagName !== dimension[0] || !node.dataset[dimension[1]]) return;
-        var value = Math.round(Math.max(dimension[2], Math.min(dimension[3], Number(node.dataset[dimension[1]]))));
+        var raw = Math.max(dimension[2], Math.min(dimension[3], Number(node.dataset[dimension[1]])));
+        var value = dimension[0] === "COL" ? Math.round(raw * 1000) / 1000 : Math.round(raw);
         if (!Number.isFinite(value)) return;
         element.dataset[dimension[1]] = value;
         element.style[dimension[4]] = value + dimension[5];
@@ -194,7 +201,7 @@
     note.textContent = status ? status.textContent : "Черновик сохранён в этом браузере на 12 часов.";
     if (value.length > 24000) note.textContent = "Приказ слишком большой. Сократите его до 24 000 символов вместе с оформлением.";
   }
-  function openEditor(field, onSave, editing) {
+  function openEditor(field, onSave, editing, verdictMode) {
     var dialog = document.getElementById("order-writing-dialog");
     if (!dialog) {
       dialog = document.createElement("dialog"); dialog.id = "order-writing-dialog"; document.body.appendChild(dialog);
@@ -204,7 +211,7 @@
     var article = parse(field.value) || { title: "", html: plainHtml(field.value) };
     var tools = [["bold","Ж"],["italic","К"],["underline","Ч"],["strikeThrough","S̶"],["h2","H₂"],["h3","H₃"],["p","Текст"],["blockquote","❝"],["link","Ссылка"]];
     var inserts = [["image","Фото"],["gif","GIF"],["video","Видео"],["audio","Аудио"],["table","Таблица"],["divider","Разделитель"],["insertUnorderedList","• Список"],["insertOrderedList","1. Список"]];
-    dialog.innerHTML = '<div class="order-writing-top"><h2>' + (editing ? "Редактировать приказ" : "Новый приказ") +
+    dialog.innerHTML = '<div class="order-writing-top"><h2>' + (verdictMode ? "Вердикт мастера" : editing ? "Редактировать приказ" : "Новый приказ") +
       '</h2><button type="button" data-order-close>Закрыть</button></div>' +
       '<div class="order-writing-tools" hidden role="toolbar" aria-label="Оформление выделенного текста">' +
       tools.map(function (tool) { return '<button type="button" data-order-tool="'+tool[0]+'">'+tool[1]+'</button>'; }).join("") +
@@ -213,9 +220,10 @@
       '</div><input type="file" id="order-media-picker" hidden><div class="order-writing-paper"><label class="order-title-label">Заголовок приказа<input id="order-writing-title" maxlength="160" placeholder="Название операции"></label>' +
       '<div id="order-writing-body" class="order-article-body" contenteditable="true" role="textbox" aria-label="Текст приказа" aria-multiline="true"></div>' +
       '</div><div class="order-writing-bottom"><span id="order-writing-note" role="status">Черновик хранится 12 часов после последнего изменения.</span>' +
-      '<button type="button" class="pr" data-order-submit>'+(editing?"Сохранить изменения":"Отправить приказ")+'</button></div>';
+      (verdictMode ? '<label>Решение<select id="verdict-decision"><option value="Принято">Принять</option><option value="Отклонено">Отклонить</option></select></label>' : "") +
+      '<button type="button" class="pr" data-order-submit>'+(verdictMode?"Опубликовать вердикт":editing?"Сохранить изменения":"Отправить приказ")+'</button></div>';
     var title = document.getElementById("order-writing-title"), body = document.getElementById("order-writing-body");
-    title.value = article.title; body.innerHTML = article.html || "<p><br></p>";
+    title.value = article.title || (verdictMode ? "Вердикт мастера" : ""); body.innerHTML = article.html || "<p><br></p>";
     dialog.oninput = saveDraft;
     dialog.onscroll = function () { dialog.querySelector(".order-insert-menu").hidden = true; positionTools(); };
     if (window.LLOrderTables) window.LLOrderTables.install(dialog, body, saveDraft);
@@ -228,7 +236,7 @@
       document.getElementById("order-writing-note").textContent = "Загружаем вложение…";
       try {
         for (var file of Array.from(files)) {
-          var media = await window.LLAuth.uploadArticleMedia(file);
+          var media = await window.LLAuth.uploadArticleMedia(file, field.dataset.mediaViewer || "");
           if (insertion && body.contains(insertion.commonAncestorContainer)) selection = insertion;
           focusSelection();
           var tag = media.mime.startsWith("image/") ? "img" : media.mime.startsWith("video/") ? "video" : "audio";
@@ -349,6 +357,21 @@
       renderCloudWall(); toast("Приказ обновлён.", "ok");
     }, true);
   }
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-article-verdict]");
+    if (!button || !window.isMaster || !isMaster()) return;
+    var id = button.dataset.articleVerdict, field = document.createElement("textarea");
+    var order = window.LLAuth.wallEntries().find(function (entry) { return entry.id === id && entry.kind === "order"; });
+    field.dataset.mediaViewer = order && order.authorUid || "";
+    window.LLWallDraft.bind(field, "verdict", id);
+    openEditor(field, async function (value) {
+      var decision = document.getElementById("verdict-decision").value;
+      await window.LLAuth.decideOrder(id, decision, value);
+      window.LLWallDraft.clear("verdict", id);
+      if (typeof renderCloudVerdicts === "function") renderCloudVerdicts();
+      renderCloudWall(); toast("Вердикт опубликован.", "ok");
+    }, false, true);
+  });
   window.LLArticles = { render: render, mount: mount, edit: edit, parse: parse };
 }());
 

@@ -278,6 +278,37 @@
   var masterDirectoryUpdatedAt = 0;
   var privateMarkers = [];
   var wallChannel = "all";
+  var commentStops = [];
+  function stopWallComments() {
+    commentStops.forEach(function (stop) { stop(); }); commentStops = [];
+  }
+  function watchVisibleComments(box) {
+    var api = authApi();
+    if (!api || !api.watchComments) return;
+    box.querySelectorAll("[data-cloud-comments]").forEach(function (button) {
+      var preview = document.createElement("div");
+      preview.className = "wall-comment-preview"; preview.hidden = true;
+      button.closest(".rx").after(preview);
+      commentStops.push(api.watchComments(button.dataset.cloudComments, button.dataset.collection, function (rows) {
+        if (!button.isConnected) return;
+        button.textContent = rows.length ? "Комментарий · " + rows.length : "Комментарий";
+        var comments = document.getElementById("comments-" + button.dataset.cloudComments);
+        preview.hidden = !rows.length || !!(comments && comments.innerHTML);
+        preview.innerHTML = rows.slice(-2).map(function (row) {
+          return '<div><b>' + esc(row.displayName || "Игрок") + '</b> ' + esc(String(row.text || "").slice(0, 240)) + '</div>';
+        }).join("");
+      }, function () { if (button.isConnected) button.textContent = "Комментарий"; }));
+    });
+  }
+  window.addEventListener("hashchange", function () { if (location.hash !== "#wall") stopWallComments(); });
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-cloud-comments]"); if (!button) return;
+    queueMicrotask(function () {
+      var preview = button.closest(".post").querySelector(".wall-comment-preview");
+      var comments = document.getElementById("comments-" + button.dataset.cloudComments);
+      if (preview) preview.hidden = !preview.textContent.trim() || !!(comments && comments.innerHTML);
+    });
+  }, true);
   var playerWallSection = "news";
   window.playerWallEntryVisible = function (entry) {
     if (isMasterNow()) return true;
@@ -418,7 +449,33 @@
     current.innerHTML = '<option value="all">Все каналы</option>' + values.map(function (channel) { return '<option value="' + esc(channel) + '">' + esc(channel) + '</option>'; }).join("");
     current.value = wallChannel;
     current.onchange = function () { wallChannel = current.value; renderWall(); };
+    decorateChannelFilter(current);
   }
+  function decorateChannelFilter(select) {
+    select.hidden = true;
+    var picker = select.parentElement.querySelector(".channel-picker");
+    if (!picker) {
+      picker = document.createElement("details"); picker.className = "channel-picker";
+      picker.innerHTML = '<summary aria-label="Выбрать канал стены"></summary><div></div>';
+      select.after(picker);
+    }
+    picker.querySelector("summary").textContent = select.selectedOptions[0] ? select.selectedOptions[0].textContent : "Все каналы";
+    var menu = picker.querySelector("div");
+    menu.replaceChildren();
+    Array.from(select.options).forEach(function (option) {
+      var button = document.createElement("button");
+      button.type = "button"; button.textContent = option.textContent;
+      button.className = option.selected ? "on" : "";
+      button.onclick = function () { select.value = option.value; picker.open = false; select.dispatchEvent(new Event("change")); };
+      menu.appendChild(button);
+    });
+  }
+  document.addEventListener("pointerdown", function (event) {
+    document.querySelectorAll(".channel-picker[open]").forEach(function (picker) { if (!picker.contains(event.target)) picker.open = false; });
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") document.querySelectorAll(".channel-picker[open]").forEach(function (picker) { picker.open = false; });
+  });
 
   function privateIcon(marker) {
     var color = validPrivateColor(marker.color), packed = unpackMarkerDescription(marker.description);
@@ -613,6 +670,7 @@
   }
 
   function renderWall() {
+    stopWallComments();
     var box = document.getElementById("cloud-wall");
     if (!box) return;
     if (!window.LLAuthState || !window.LLAuthState.configured) { box.textContent = "Общие записи стены появятся после подключения Firebase."; return; }
@@ -624,6 +682,7 @@
       entries.forEach(function (entry) { if (entry.kind === "broadcast" && entry.channel && values.indexOf(entry.channel) < 0) values.push(entry.channel); });
       channelFilter.innerHTML = '<option value="all">Все каналы</option>' + values.map(function (channel) { return '<option value="' + esc(channel) + '">' + esc(channel) + '</option>'; }).join("");
       channelFilter.value = selectedChannel;
+      decorateChannelFilter(channelFilter);
     }
     entries = entries.filter(window.playerWallEntryVisible);
     if ((isMasterNow() || playerWallSection === "orders") && wf !== "all") entries = entries.filter(function (p) { return p.status === wf; });
@@ -643,13 +702,14 @@
       var wallUid = window.LLAuthState && window.LLAuthState.user && window.LLAuthState.user.uid;
       var canManagePost = isMasterNow() || (p.kind === "order" && wallUid && p.authorUid === wallUid);
       if (canManagePost) html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"><button data-wall-edit="' + esc(p.id) + '">Изменить</button><button data-wall-delete="' + esc(p.id) + '" data-wall-kind="' + esc(p.kind) + '">Удалить</button><div id="wall-edit-form-' + esc(p.id) + '" hidden style="width:100%;margin-top:6px"><textarea data-wall-text="' + esc(p.id) + '" rows="4" maxlength="' + (p.kind === "order" ? 24000 : 12000) + '" style="width:100%">' + esc(p.text || "") + '</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="pr" data-wall-save="' + esc(p.id) + '" data-wall-kind="' + esc(p.kind) + '">Сохранить</button><button data-wall-cancel="' + esc(p.id) + '">Отмена</button></div></div></div>';
-      if ((broadcast || p.kind === "post") && (isActivePlayerNow() || isMasterNow())) {
-        html += '<div class="rx">' + (!broadcast ? '<button data-cloud-react="like" data-post="' + esc(p.id) + '">Нравится</button>' : "") + '<button data-cloud-comments="' + esc(p.id) + '" data-collection="' + (broadcast ? "broadcasts" : "posts") + '" style="color:var(--mu)">Ответить / комментарии</button></div><div id="comments-' + esc(p.id) + '"></div>';
+      if (broadcast || p.kind === "post") {
+        html += '<div class="rx">' + (!broadcast && (isActivePlayerNow() || isMasterNow()) ? '<button data-cloud-react="like" data-post="' + esc(p.id) + '">Нравится</button>' : "") + '<button data-cloud-comments="' + esc(p.id) + '" data-collection="' + (broadcast ? "broadcasts" : "posts") + '" style="color:var(--mu)">Комментарий</button></div><div id="comments-' + esc(p.id) + '"></div>';
       }
-      if (isMasterNow() && p.kind === "order" && status === "Ожидает вердикта") html += '<div style="margin-top:10px"><textarea id="wall-verdict-' + esc(p.id) + '" rows="2" style="width:100%" placeholder="Ваш вердикт (необязательно)…"></textarea><button class="pr" data-cloud-order="Принято" data-post="' + esc(p.id) + '">Принять</button> <button data-cloud-order="Отклонено" data-post="' + esc(p.id) + '">Отклонить</button></div>';
-      if (p.verdict) html += '<div class="vd"><b>Вердикт мастера</b><br>' + esc(p.verdict) + '</div>';
+      if (isMasterNow() && p.kind === "order" && status === "Ожидает вердикта") html += '<div style="margin-top:10px"><button class="pr" data-article-verdict="' + esc(p.id) + '">Написать вердикт</button></div>';
+      if (p.verdict) html += '<div class="vd"><b>Вердикт мастера</b><br>' + (window.LLArticles ? window.LLArticles.render(p.verdict) : esc(p.verdict)) + '</div>';
       return html + "</div>";
     }).join("");
+    if (location.hash === "#wall") watchVisibleComments(box);
     if (window.LLWallDraft) entries.forEach(function (p) { var verdict = document.getElementById("wall-verdict-" + p.id); if (verdict) window.LLWallDraft.bind(verdict, "wall-verdict", p.id); });
   }
 
