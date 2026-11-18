@@ -639,7 +639,7 @@
       var created = p.createdAt && p.createdAt.toDate ? p.createdAt.toDate().toLocaleString("ru-RU") : "только что";
       var statusClass = status === "Принято" || status === "Событие" ? "ok" : status === "Отклонено" ? "no" : "";
       var audience = broadcast ? (isMasterNow() && p.audience === "selected" ? '<span class="st">Для выбранных</span>' : "") : "";
-      var html = '<div class="card post"><div class="broadcast-head"><b>' + esc(name) + '</b>' + (broadcast ? '<span class="broadcast-channel">' + esc(p.channel || "События") + "</span>" : "") + '<span style="color:var(--mu)">' + esc(created) + '</span><span class="sp"></span>' + audience + '<span class="st ' + statusClass + '">' + esc(status) + "</span></div>" + (p.imageUrl ? '<img class="pim" src="' + esc(p.imageUrl) + '" alt="">' : "") + '<div class="pt">' + esc(p.text || "") + "</div>";
+      var html = '<div class="card post"><div class="broadcast-head"><b>' + esc(name) + '</b>' + (broadcast ? '<span class="broadcast-channel">' + esc(p.channel || "События") + "</span>" : "") + '<span style="color:var(--mu)">' + esc(created) + '</span><span class="sp"></span>' + audience + '<span class="st ' + statusClass + '">' + esc(status) + "</span></div>" + (p.imageUrl ? '<img class="pim" src="' + esc(p.imageUrl) + '" alt="">' : "") + (window.LLArticles ? window.LLArticles.render(p.text || "") : '<div class="pt">' + esc(p.text || "") + "</div>");
       var wallUid = window.LLAuthState && window.LLAuthState.user && window.LLAuthState.user.uid;
       var canManagePost = isMasterNow() || (p.kind === "order" && wallUid && p.authorUid === wallUid);
       if (canManagePost) html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"><button data-wall-edit="' + esc(p.id) + '">Изменить</button><button data-wall-delete="' + esc(p.id) + '" data-wall-kind="' + esc(p.kind) + '">Удалить</button><div id="wall-edit-form-' + esc(p.id) + '" hidden style="width:100%;margin-top:6px"><textarea data-wall-text="' + esc(p.id) + '" rows="4" maxlength="12000" style="width:100%">' + esc(p.text || "") + '</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="pr" data-wall-save="' + esc(p.id) + '" data-wall-kind="' + esc(p.kind) + '">Сохранить</button><button data-wall-cancel="' + esc(p.id) + '">Отмена</button></div></div></div>';
@@ -683,6 +683,7 @@
       var input = document.getElementById("wt"), publish = document.getElementById("wp");
       if (input) input.placeholder = "Опишите приказ отряда…";
       if (publish) publish.textContent = "Отправить приказ";
+      if (window.LLArticles) window.LLArticles.mount(card);
     } else {
       card.querySelectorAll("#wt,#wi,#wp,#wall-draft-status,.auth-note").forEach(function (el) { el.hidden = true; });
     }
@@ -769,6 +770,8 @@
     var cancelButton = target.closest && target.closest("[data-wall-cancel]");
     var deleteButton = target.closest && target.closest("[data-wall-delete]");
     if (editButton) {
+      var entry = authApi().wallEntries().find(function (item) { return item.id === editButton.getAttribute("data-wall-edit"); });
+      if (entry && entry.kind === "order" && window.LLArticles) { window.LLArticles.edit(entry); return; }
       var editId = editButton.getAttribute("data-wall-edit"), form = document.getElementById("wall-edit-form-" + editId);
       if (form) { form.hidden = false; var field = form.querySelector("textarea"); if (field) field.focus(); }
       return;
