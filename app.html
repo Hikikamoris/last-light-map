@@ -381,7 +381,53 @@ function rAdm(){if(!isMaster())return;var admTabs=['Отряды','Заявки'
  $('adm').innerHTML=h;if($('cloud-event-text'))bindWallDraft($('cloud-event-text'),'world-event','main','cloud-event-draft-status');if(at==='Заявки')loadCloudApplications();if(at==='Вердикты')renderCloudVerdicts();if(at==='Журнал')loadCloudJournal();if(at==='Доступ')loadCloudUsers()}
 var rAdmWithoutWorldSyncPanel=rAdm;
 function drawWorldSyncPanel(){if(!isMaster()||at!=='Отряды')return;var role=LLAuthState.profile&&LLAuthState.profile.role,html='<div class="card" style="max-width:850px;margin:10px 0 12px;border-color:#756536">';if(!worldSyncReady)html+='<b>Общая карта</b><p style="color:var(--mu);margin:6px 0 0">Подключаю общую базу…</p>';else if(!worldCloudExists&&role==='owner')html+='<b>Общая карта ещё не создана</b><p style="color:var(--mu);margin:6px 0 10px">Сейчас отряды и зоны сохранены только в этом браузере. Нажмите один раз, чтобы сделать эту версию общей для всех.</p><button class="pr" data-world-sync="init">Опубликовать текущие отряды и карту</button>';else if(!worldCloudExists)html+='<b>Ожидается первая общая публикация</b><p style="color:var(--mu);margin:6px 0 0">Создатель проекта должен один раз опубликовать текущие отряды и карту. После этого сохранения мастеров будут видны всем.</p>';else html+='<b>Общая версия активна</b><p style="color:var(--mu);margin:6px 0 0">Изменения отрядов и редактора карты сохраняются для всех игроков.</p>';if(worldLocalBackupAvailable)html+='<button style="margin-top:8px" data-world-sync="backup">Скачать прежнюю локальную копию</button>';html+='</div>';var tabs=$('adm').querySelector('.tabs');if(tabs)tabs.insertAdjacentHTML('afterend',html)}
-rAdm=function(){rAdmWithoutWorldSyncPanel();drawWorldSyncPanel()};
+rAdm=function(){rAdmWithoutWorldSyncPanel();drawWorldSyncPanel();loadSquadAssignments()};
+function loadSquadAssignments(){
+ if(!isMaster()||at!=='Отряды')return;
+ var entries=[];
+ D.squads.forEach(function(squad){
+  var card=Array.from($('adm').querySelectorAll('[data-q]')).find(function(el){
+   return el.getAttribute('data-q')===String(squad.id);
+  });
+  if(!card)return;
+  var box=document.createElement('div');
+  box.style.cssText='border-bottom:1px solid var(--bd);padding-bottom:12px;margin-bottom:12px;overflow-wrap:anywhere';
+  box.textContent=squad.ownerUid?'Закреплённый игрок · загружаем аккаунт…':'Игрок не закреплён';
+  card.prepend(box);
+  if(squad.ownerUid)entries.push({squad:squad,box:box});
+ });
+ if(!entries.length||!window.LLAuth)return;
+ Promise.all([
+  window.LLAuth.listUsers(),
+  window.LLAuth.listMasterNotes().catch(function(){return []})
+ ]).then(function(results){
+  var users=new Map(results[0].map(function(user){return [user.id,user]}));
+  var notes=new Map(results[1].map(function(note){return [note.uid,note.alias]}));
+  entries.forEach(function(entry){
+   if(!entry.box.isConnected||!isMaster())return;
+   var squad=entry.squad,user=users.get(squad.ownerUid),alias=notes.get(squad.ownerUid);
+   var name=alias||(user&&user.displayName)||squad.ownerUid;
+   var account=user&&(user.email||user.displayName)||squad.ownerUid;
+   entry.box.innerHTML='<b>Закреплённый игрок · '+esc(name)+'</b>'+
+    (account!==name?'<small style="display:block;color:var(--mu);margin-top:4px">'+esc(account)+'</small>':'')+
+    '<button type="button" style="margin-top:8px">Снять игрока с главы отряда</button>';
+   entry.box.querySelector('button').onclick=async function(){
+    if(!confirm('Снять игрока «'+name+'» с отряда «'+squad.n+'»? Отряд сохранится, а игрок будет ожидать нового назначения.'))return;
+    this.disabled=true;
+    try{
+     await window.LLAuth.unassignSquad(squad.id,squad.ownerUid);
+     toast('Игрок снят с отряда. Назначить его снова можно во вкладке «Заявки».','ok');
+    }catch(error){authMessage(error)}
+    finally{if(this.isConnected)this.disabled=false}
+   };
+  });
+ }).catch(function(error){
+  entries.forEach(function(entry){
+   if(entry.box.isConnected)entry.box.textContent='Закреплённый аккаунт · '+entry.squad.ownerUid;
+  });
+  authMessage(error);
+ });
+}
 function downloadPreSharedWorldBackup(){try{var raw=localStorage.getItem('lastlight_before_shared_world');if(!raw){toast('Локальной копии до общей синхронизации нет.','error');return}var a=document.createElement('a'),url=URL.createObjectURL(new Blob([raw],{type:'application/json'}));a.href=url;a.download='lastlight-before-shared-sync.json';a.click();setTimeout(function(){URL.revokeObjectURL(url)},1200);toast('Прежняя локальная копия скачана.','ok')}catch(e){toast('Не удалось скачать локальную копию.','error')}}
 function applicationRosterMarkup(members){
  return (Array.isArray(members)?members:[]).filter(Boolean).map(function(member,i){
@@ -916,5 +962,5 @@ document.addEventListener('keydown',function(e){if(location.hash!=='#editor'||!E
 drawFeat();
 L.control.zoom({position:'bottomright',zoomInTitle:'Приблизить',zoomOutTitle:'Отдалить'}).addTo(map);
 clock();drawMap();drawLeg();go();
-</script><script src="./rp-social.js?v=20261118-mobile-scroll1"></script><script type="module" src="./firebase-auth.js?v=20261118-squad-applications1"></script></body></html>
+</script><script src="./rp-social.js?v=20261118-mobile-scroll1"></script><script type="module" src="./firebase-auth.js?v=20261118-squad-owners1"></script></body></html>
 

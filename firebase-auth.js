@@ -530,6 +530,35 @@ const api = {
       return assigned;
     });
   },
+  async unassignSquad(squadId, expectedOwnerUid) {
+    if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) {
+      throw new Error("Снимать игрока с отряда может только мастер.");
+    }
+    if (!expectedOwnerUid) throw new Error("У отряда нет закреплённого игрока.");
+    const masterUid = state.user.uid;
+    const worldRef = doc(db, "public", "world");
+    return runTransaction(db, async (transaction) => {
+      const world = (await transaction.get(worldRef)).data();
+      const squads = Array.isArray(world?.squads) ? world.squads.slice() : [];
+      const index = squads.findIndex((squad) => squad && String(squad.id) === String(squadId));
+      if (index < 0) throw new Error("Отряд больше не существует. Обновите страницу.");
+      if (squads[index].ownerUid !== expectedOwnerUid) {
+        throw new Error("Привязка отряда уже изменилась. Обновите страницу.");
+      }
+      const releasedSquad = { ...squads[index], npc: 1 };
+      delete releasedSquad.ownerUid;
+      squads[index] = releasedSquad;
+      const otherSquad = squads.find((squad) => squad?.ownerUid === expectedOwnerUid);
+      transaction.update(worldRef, { squads, updatedBy: masterUid, updatedAt: serverTimestamp() });
+      transaction.update(doc(db, "users", expectedOwnerUid), {
+        status: otherSquad ? "active" : "visitor",
+        squadId: otherSquad ? String(otherSquad.id) : "",
+        updatedBy: masterUid,
+        updatedAt: serverTimestamp()
+      });
+      return releasedSquad;
+    });
+  },
   async decideApplication(uid, decision, reason = "") {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Нет прав мастера.");
     if (decision !== "rejected") throw new Error("Для одобрения заявки создайте или выберите отряд игрока.");
