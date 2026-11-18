@@ -569,7 +569,13 @@ const api = {
     const userRef = doc(db, "users", uid);
     await runTransaction(db, async (transaction) => {
       const app = (await transaction.get(appRef)).data();
-      if (app?.applicantUid !== uid || app.status !== "pending") throw new Error("Эта заявка уже рассмотрена.");
+      if (app?.applicantUid !== uid || !["pending", "approved"].includes(app.status)) {
+        throw new Error("Эта заявка уже рассмотрена.");
+      }
+      const world = (await transaction.get(doc(db, "public", "world"))).data();
+      if (Array.isArray(world?.squads) && world.squads.some((squad) => squad?.ownerUid === uid)) {
+        throw new Error("За игроком уже закреплён отряд. Сначала снимите привязку во вкладке «Отряды».");
+      }
       transaction.update(appRef, {
         status: "rejected", decisionReason, reviewedBy: masterUid,
         reviewedAt: serverTimestamp(), updatedAt: serverTimestamp()

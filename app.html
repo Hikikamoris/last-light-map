@@ -463,7 +463,7 @@ function loadCloudApplications(){
     (!worldAvailable?'<p>Сначала опубликуйте общую карту во вкладке «Отряды».</p>':'')+
     '<div class="application-actions"><button type="button" class="pr" data-app-action="create" data-app-index="'+index+'"'+(!worldAvailable?' disabled':'')+'>Создать отряд</button>'+
     (unassigned&&worldAvailable?'<button type="button" data-app-action="attach" data-app-index="'+index+'">Прикрепить существующий</button>':'')+
-    (pending?'<button type="button" data-app-action="reject" data-app-index="'+index+'">Отклонить</button>':'')+'</div></article>';
+    '<button type="button" data-app-action="reject" data-app-index="'+index+'">Отклонить</button></div></article>';
   }).join('');
   box.onclick=function(event){
    var button=event.target.closest('button[data-app-action]');
@@ -962,5 +962,5 @@ document.addEventListener('keydown',function(e){if(location.hash!=='#editor'||!E
 drawFeat();
 L.control.zoom({position:'bottomright',zoomInTitle:'Приблизить',zoomOutTitle:'Отдалить'}).addTo(map);
 clock();drawMap();drawLeg();go();
-</script><script src="./rp-social.js?v=20261118-mobile-scroll1"></script><script type="module" src="./firebase-auth.js?v=20261118-squad-owners1"></script></body></html>
+</script><script src="./rp-social.js?v=20261118-mobile-scroll1"></script><script type="module" src="./firebase-auth.js?v=20261118-application-reject1"></script></body></html>
 
