@@ -148,6 +148,20 @@
     if (body && current.rangeCount && body.contains(current.anchorNode) && body.contains(current.focusNode)) selection = current.getRangeAt(0).cloneRange();
     positionTools();
   }
+  function updateFormatButtons(toolbar) {
+    var blocks = { h2: "h2", h3: "h3", p: "p,div", blockquote: "blockquote" };
+    var block = String(document.queryCommandValue("formatBlock") || "").toLowerCase();
+    var current = window.getSelection(), node = current.anchorNode;
+    if (node && node.nodeType !== 1) node = node.parentElement;
+    toolbar.querySelectorAll("[data-order-tool]").forEach(function (button) {
+      var command = button.dataset.orderTool, applied = false;
+      if (["bold", "italic", "underline", "strikeThrough"].includes(command)) applied = document.queryCommandState(command);
+      else if (command === "link") applied = !!(node && node.closest("a"));
+      else if (blocks[command]) applied = command === "blockquote" ? !!(node && node.closest("blockquote")) : block === command || command === "p" && block === "div";
+      button.classList.toggle("on", applied);
+      button.setAttribute("aria-pressed", String(applied));
+    });
+  }
   function positionTools() {
     var dialog = document.getElementById("order-writing-dialog"), body = document.getElementById("order-writing-body");
     if (!dialog || !dialog.open || !body) return;
@@ -155,6 +169,7 @@
     toolbar.hidden = true; plus.hidden = true;
     var current = window.getSelection();
     if (!current.rangeCount || !body.contains(current.anchorNode) || !body.contains(current.focusNode)) return;
+    updateFormatButtons(toolbar);
     var range = current.getRangeAt(0), bounds = dialog.getBoundingClientRect();
     var rect = range.getBoundingClientRect();
     if (!current.isCollapsed && current.toString().trim()) {

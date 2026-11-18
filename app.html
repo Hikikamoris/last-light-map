@@ -170,7 +170,7 @@ nav a,.tabs button{font-size:13px}.st{font-size:11px}button.pr:hover{filter:brig
  .post{padding:14px}.rx button{min-height:40px}
 }
 @media(max-width:420px){.logo{font-size:15px}.etop h2{font-size:14px}.etop .save-status{white-space:normal;max-width:100%}.wrap{padding:10px}.card{padding:12px}}
-</style><link rel="stylesheet" href="./mobile.css?v=20261118-mobile-scroll1"><link rel="stylesheet" href="./order-articles.css?v=20261118-wall-upgrade1"></head><body>
+</style><link rel="stylesheet" href="./mobile.css?v=20261118-mobile-scroll1"><link rel="stylesheet" href="./order-articles.css?v=20261118-polish1"></head><body>
 <header>
  <div class="logo"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v3M14 3v3M7 9a5 5 0 0110 0v8H7zM9 21h6M12 11v4"/></svg><span>Last <b>Light</b></span></div>
  <nav id="nav"><a href="#map">Карта</a><a href="#wall">Стена</a><a href="#state">Отряд</a><a href="#rules">Правила и механики</a><a href="#editor" id="edlink" style="display:none">Редактор карты</a><a href="#marker-studio" id="markerlink" style="display:none">Редактор значков</a><a href="#admin" id="admlink" style="display:none"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg> Мастер</a></nav>
@@ -310,7 +310,7 @@ function rWall(){var h='<div class="eb">Last Light</div><h1>Стена</h1><div 
  $('wall').innerHTML=h;$('wf').value=wf;$('wf').onchange=function(){wf=this.value;rWall()};if($('wt'))bindWallDraft($('wt'),'post','main','wall-draft-status');renderCloudWall();
  if($('wp'))$('wp').onclick=function(){var t=$('wt').value.trim();if(!t)return;if(!isActivePlayer()&&!isMaster()){toast('Действие доступно после одобрения заявки мастером.','error');return}window.LLAuth.createWallEntry(t).then(function(){clearWallDraft('post','main');$('wt').value='';rWall();toast(isMaster()?'Запись опубликована.':'Приказ отправлен мастеру.','ok')}).catch(authMessage)}}
 function renderCloudWall(){var box=$('cloud-wall');if(!box)return;if(!LLAuthState.configured){box.textContent='Общие записи стены появятся после подключения Firebase.';return}var entries=window.LLAuth&&window.LLAuth.wallEntries?window.LLAuth.wallEntries():[];if(wf!=='all')entries=entries.filter(function(p){return p.status===wf});if(!entries.length){box.innerHTML='<div class="card" style="color:var(--mu)">Пока нет общих публикаций.</div>';return}box.innerHTML=entries.map(function(p){var status=p.status||'Опубликовано',name=p.authorName||p.squadName||'Игрок',created=p.createdAt&&p.createdAt.toDate?p.createdAt.toDate().toLocaleString('ru-RU'):'только что',s='<div class="card post"><div class="row" style="border:0"><b>'+esc(name)+'</b><span style="color:var(--mu)">'+esc(created)+'</span><span class="sp"></span><span class="st '+(status==='Принято'||status==='Событие'?'ok':status==='Отклонено'?'no':'')+'">'+esc(status)+'</span></div>'+(p.imageUrl?'<img class="pim" src="'+esc(p.imageUrl)+'" alt="">':'')+'<div class="pt">'+esc(p.text||'')+'</div>';
- if(p.kind==='post'&&(isActivePlayer()||isMaster()))s+='<div class="rx"><button data-cloud-react="like" data-post="'+esc(p.id)+'">Нравится</button><button data-cloud-comments="'+esc(p.id)+'" style="color:var(--mu)">Комментарии</button></div><div id="comments-'+esc(p.id)+'"></div>';
+ if(p.kind==='post'&&(isActivePlayer()||isMaster()))s+='<div class="rx"><button data-cloud-comments="'+esc(p.id)+'" style="color:var(--mu)">Комментарии</button></div><div id="comments-'+esc(p.id)+'"></div>';
  if(isMaster()&&p.kind==='order'&&status==='Ожидает вердикта')s+='<div style="margin-top:10px"><button class="pr" data-cloud-order="Принято" data-post="'+esc(p.id)+'">Принять</button> <button data-cloud-order="Отклонено" data-post="'+esc(p.id)+'">Отклонить</button></div>';
  if(p.verdict)s+='<div class="vd"><b>Вердикт мастера</b><br>'+esc(p.verdict)+'</div>';return s+'</div>'}).join('')}
 window.addEventListener('ll:wall-data',renderCloudWall);
@@ -602,13 +602,10 @@ function postHtml(p,i){var sq=D.squads.filter(function(s){return s.n===p.a})[0],
  if(p.img)h+='<img class="pim" src="'+p.img+'" alt="">';
  h+='<div class="pt">'+esc(sh)+'</div>';
  if(lg)h+='<button class="full" data-x="'+i+'">'+(EXP[i]?'Свернуть':'Показать полностью')+'</button>';
- h+='<div class="rx" style="color:var(--mu)">Нравится · '+lk+' · Комментарии · '+cm.length+'</div>';
+ h+='<div class="rx" style="color:var(--mu)">Комментарии · '+cm.length+'</div>';
  if(p.v)h+='<div class="vd"><b>Вердикт · '+esc(p.a)+'</b>\n'+esc(p.v)+'</div>';
  return h+'</div>'}
 $('wall').addEventListener('click',function(e){var t=e.target,g=function(k){return t.getAttribute(k)},x;
- if((x=g('data-cloud-react'))!==null){window.LLAuth.react(g('data-post'),x).then(renderCloudWall).catch(authMessage);return}
- if((x=g('data-cloud-comments'))!==null){var target=$('comments-'+x);if(!target)return;if(target.innerHTML){target.innerHTML='';return}target.innerHTML='<div style="color:var(--mu);padding:8px">Загружаю комментарии…</div><input id="comment-input-'+esc(x)+'" placeholder="Комментарий…" style="width:calc(100% - 110px);margin-top:8px"> <button data-cloud-comment-send="'+esc(x)+'">Отправить</button>';bindWallDraft($('comment-input-'+x),'comment',x);window.LLAuth.listComments(x).then(function(rows){if(!target.isConnected)return;target.innerHTML=rows.map(function(c){return'<div class="row"><span><b>'+esc(c.displayName||'Игрок')+'</b> '+esc(c.text||'')+'</span></div>'}).join('')+'<input id="comment-input-'+esc(x)+'" placeholder="Комментарий…" style="width:calc(100% - 110px);margin-top:8px"> <button data-cloud-comment-send="'+esc(x)+'">Отправить</button>';bindWallDraft($('comment-input-'+x),'comment',x)}).catch(function(err){target.textContent=err.message});return}
- if((x=g('data-cloud-comment-send'))!==null){var ci=$('comment-input-'+x);window.LLAuth.addComment(x,ci?ci.value:'').then(function(){clearWallDraft('comment',x);renderCloudWall()}).catch(authMessage);return}
  if((x=g('data-x'))!==null){EXP[x]=!EXP[x];rWall()}
  else if((x=g('data-re'))!==null){if(!isActivePlayer()&&!isMaster())return;var i=+x.slice(1),p=D.posts[i],k=x.charAt(0)==='l'?'lk':'dl',o=k==='lk'?'dl':'lk';if(p.me===x.charAt(0)){p[k]=(p[k]||1)-1;p.me=null}else{if(p.me)p[p.me==='l'?'lk':'dl']=(p[p.me==='l'?'lk':'dl']||1)-1;p[k]=(p[k]||0)+1;p.me=x.charAt(0)}save();rWall()}
  else if((x=g('data-cm'))!==null){CMO[x]=!CMO[x];rWall()}
@@ -957,5 +954,5 @@ document.addEventListener('keydown',function(e){if(location.hash!=='#editor'||!E
 drawFeat();
 L.control.zoom({position:'bottomright',zoomInTitle:'Приблизить',zoomOutTitle:'Отдалить'}).addTo(map);
 clock();drawMap();drawLeg();go();
-</script><script src="./order-tables.js?v=20261118-wall-upgrade1"></script><script src="./order-articles.js?v=20261118-wall-upgrade1"></script><script src="./rp-social.js?v=20261118-wall-upgrade1"></script><script type="module" src="./firebase-auth.js?v=20261118-wall-upgrade1"></script></body></html>
+</script><script src="./order-tables.js?v=20261118-polish1"></script><script src="./order-articles.js?v=20261118-polish1"></script><script src="./rp-social.js?v=20261118-polish1"></script><script type="module" src="./firebase-auth.js?v=20261118-polish1"></script></body></html>
 

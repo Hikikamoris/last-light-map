@@ -282,6 +282,12 @@
   function stopWallComments() {
     commentStops.forEach(function (stop) { stop(); }); commentStops = [];
   }
+  function syncCommentPreview(button) {
+    var preview = button.closest(".post").querySelector(".wall-comment-preview");
+    var comments = document.getElementById("comments-" + button.dataset.cloudComments);
+    if (preview) preview.hidden = !Number(preview.dataset.count) || !!(comments && comments.dataset.open === "true");
+    button.setAttribute("aria-expanded", String(!!comments && comments.dataset.open === "true"));
+  }
   function watchVisibleComments(box) {
     var api = authApi();
     if (!api || !api.watchComments) return;
@@ -292,23 +298,15 @@
       commentStops.push(api.watchComments(button.dataset.cloudComments, button.dataset.collection, function (rows) {
         if (!button.isConnected) return;
         button.textContent = rows.length ? "Комментарий · " + rows.length : "Комментарий";
-        var comments = document.getElementById("comments-" + button.dataset.cloudComments);
-        preview.hidden = !rows.length || !!(comments && comments.innerHTML);
+        preview.dataset.count = rows.length;
         preview.innerHTML = rows.slice(-2).map(function (row) {
           return '<div><b>' + esc(row.displayName || "Игрок") + '</b> ' + esc(String(row.text || "").slice(0, 240)) + '</div>';
         }).join("");
+        syncCommentPreview(button);
       }, function () { if (button.isConnected) button.textContent = "Комментарий"; }));
     });
   }
   window.addEventListener("hashchange", function () { if (location.hash !== "#wall") stopWallComments(); });
-  document.addEventListener("click", function (event) {
-    var button = event.target.closest("[data-cloud-comments]"); if (!button) return;
-    queueMicrotask(function () {
-      var preview = button.closest(".post").querySelector(".wall-comment-preview");
-      var comments = document.getElementById("comments-" + button.dataset.cloudComments);
-      if (preview) preview.hidden = !preview.textContent.trim() || !!(comments && comments.innerHTML);
-    });
-  }, true);
   var playerWallSection = "news";
   window.playerWallEntryVisible = function (entry) {
     if (isMasterNow()) return true;
@@ -440,7 +438,8 @@
     if (!statusFilter) return;
     var current = document.getElementById("wall-channel-filter");
     if (!current) {
-      statusFilter.insertAdjacentHTML("afterend", '<label class="fi" style="margin-top:8px">Канал стены<select id="wall-channel-filter"></select></label>');
+      var anchor = statusFilter.nextElementSibling && statusFilter.nextElementSibling.matches(".channel-picker") ? statusFilter.nextElementSibling : statusFilter;
+      anchor.insertAdjacentHTML("afterend", '<label class="fi" style="margin-top:8px">Канал стены<select id="wall-channel-filter"></select></label>');
       current = document.getElementById("wall-channel-filter");
     }
     var values = ["Радиопереговоры", "События", "Слухи", "Объявления"];
@@ -453,7 +452,7 @@
   }
   function decorateChannelFilter(select) {
     select.hidden = true;
-    var picker = select.parentElement.querySelector(".channel-picker");
+    var picker = select.nextElementSibling && select.nextElementSibling.matches(".channel-picker") ? select.nextElementSibling : null;
     if (!picker) {
       picker = document.createElement("details"); picker.className = "channel-picker";
       picker.innerHTML = '<summary aria-label="Выбрать канал стены"></summary><div></div>';
@@ -466,7 +465,12 @@
       var button = document.createElement("button");
       button.type = "button"; button.textContent = option.textContent;
       button.className = option.selected ? "on" : "";
-      button.onclick = function () { select.value = option.value; picker.open = false; select.dispatchEvent(new Event("change")); };
+      button.onclick = function () {
+        select.value = option.value; picker.open = false;
+        picker.querySelector("summary").textContent = option.textContent;
+        Array.from(menu.children).forEach(function (item) { item.classList.toggle("on", item === button); });
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      };
       menu.appendChild(button);
     });
   }
@@ -665,6 +669,9 @@
     if (window.LLWallDraft) window.LLWallDraft.bind(document.getElementById("broadcast-text"), "broadcast", "main", "broadcast-draft-status");
     var filter = document.getElementById("wf");
     if (filter) { filter.value = wf; filter.onchange = function () { wf = this.value; renderWall(); }; }
+    ["broadcast-channel", "broadcast-audience", "wf"].forEach(function (id) {
+      var select = document.getElementById(id); if (select) decorateChannelFilter(select);
+    });
     renderChannelFilter();
     loadMasterDirectory(false);
   }
@@ -703,7 +710,7 @@
       var canManagePost = isMasterNow() || (p.kind === "order" && wallUid && p.authorUid === wallUid);
       if (canManagePost) html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px"><button data-wall-edit="' + esc(p.id) + '">Изменить</button><button data-wall-delete="' + esc(p.id) + '" data-wall-kind="' + esc(p.kind) + '">Удалить</button><div id="wall-edit-form-' + esc(p.id) + '" hidden style="width:100%;margin-top:6px"><textarea data-wall-text="' + esc(p.id) + '" rows="4" maxlength="' + (p.kind === "order" ? 24000 : 12000) + '" style="width:100%">' + esc(p.text || "") + '</textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="pr" data-wall-save="' + esc(p.id) + '" data-wall-kind="' + esc(p.kind) + '">Сохранить</button><button data-wall-cancel="' + esc(p.id) + '">Отмена</button></div></div></div>';
       if (broadcast || p.kind === "post") {
-        html += '<div class="rx">' + (!broadcast && (isActivePlayerNow() || isMasterNow()) ? '<button data-cloud-react="like" data-post="' + esc(p.id) + '">Нравится</button>' : "") + '<button data-cloud-comments="' + esc(p.id) + '" data-collection="' + (broadcast ? "broadcasts" : "posts") + '" style="color:var(--mu)">Комментарий</button></div><div id="comments-' + esc(p.id) + '"></div>';
+        html += '<div class="rx">' + '<button data-cloud-comments="' + esc(p.id) + '" data-collection="' + (broadcast ? "broadcasts" : "posts") + '" style="color:var(--mu)">Комментарий</button></div><div id="comments-' + esc(p.id) + '"></div>';
       }
       if (isMasterNow() && p.kind === "order" && status === "Ожидает вердикта") html += '<div style="margin-top:10px"><button class="pr" data-article-verdict="' + esc(p.id) + '">Написать вердикт</button></div>';
       if (p.verdict) html += '<div class="vd"><b>Вердикт мастера</b><br>' + (window.LLArticles ? window.LLArticles.render(p.verdict) : esc(p.verdict)) + '</div>';
@@ -854,30 +861,36 @@
     }
   });
 
-  function refreshBroadcastComments(id, target) {
-    authApi().listComments(id, "broadcasts").then(function (rows) {
-      if (!target.isConnected) return;
+  function refreshWallComments(id, target, collectionName) {
+    var revision = String(Number(target.dataset.revision || 0) + 1);
+    target.dataset.revision = revision;
+    authApi().listComments(id, collectionName).then(function (rows) {
+      if (!target.isConnected || target.dataset.open !== "true" || target.dataset.revision !== revision) return;
       target.innerHTML = rows.map(function (comment) {
         return '<div class="row"><span><b>' + esc(comment.displayName || "Игрок") + '</b> ' + esc(comment.text || "") + "</span></div>";
-      }).join("") + '<input id="comment-input-' + esc(id) + '" placeholder="Ответить…" style="width:calc(100% - 110px);margin-top:8px"><button data-cloud-comment-send="' + esc(id) + '" data-collection="broadcasts">Отправить</button>';
+      }).join("") + '<input id="comment-input-' + esc(id) + '" placeholder="Ответить…" style="width:calc(100% - 110px);margin-top:8px"><button data-cloud-comment-send="' + esc(id) + '" data-collection="' + collectionName + '">Отправить</button>';
       if (window.LLWallDraft) window.LLWallDraft.bind(document.getElementById("comment-input-" + id), "comment", id);
-    }).catch(function (error) { if (target.isConnected) target.textContent = error.message || "Не удалось загрузить ответы."; });
+    }).catch(function (error) { if (target.isConnected && target.dataset.open === "true" && target.dataset.revision === revision) target.textContent = error.message || "Не удалось загрузить ответы."; });
   }
   document.getElementById("wall").addEventListener("click", function (event) {
-    var commentButton = event.target.closest && event.target.closest('[data-cloud-comments][data-collection="broadcasts"]');
-    var sendButton = event.target.closest && event.target.closest('[data-cloud-comment-send][data-collection="broadcasts"]');
+    var commentButton = event.target.closest && event.target.closest('[data-cloud-comments]');
+    var sendButton = event.target.closest && event.target.closest('[data-cloud-comment-send]');
     if (!commentButton && !sendButton) return;
     event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
     if (commentButton) {
       var id = commentButton.getAttribute("data-cloud-comments"), target = document.getElementById("comments-" + id);
       if (!target) return;
-      if (target.innerHTML) { target.innerHTML = ""; return; }
+      if (target.dataset.open === "true") {
+        target.dataset.open = "false"; target.dataset.revision = String(Number(target.dataset.revision || 0) + 1);
+        target.innerHTML = ""; syncCommentPreview(commentButton); return;
+      }
+      target.dataset.open = "true"; syncCommentPreview(commentButton);
       target.innerHTML = '<div style="color:var(--mu);padding:8px">Загружаю ответы…</div>';
-      refreshBroadcastComments(id, target);
+      refreshWallComments(id, target, commentButton.dataset.collection || "posts");
       return;
     }
     var sendId = sendButton.getAttribute("data-cloud-comment-send"), input = document.getElementById("comment-input-" + sendId), commentTarget = document.getElementById("comments-" + sendId);
-    authApi().addComment(sendId, input ? input.value : "", "broadcasts").then(function () { if (window.LLWallDraft) window.LLWallDraft.clear("comment", sendId); refreshBroadcastComments(sendId, commentTarget); }).catch(function (error) { toast(error.message || "Не удалось отправить ответ.", "error"); });
+    authApi().addComment(sendId, input ? input.value : "", sendButton.dataset.collection || "posts").then(function () { if (window.LLWallDraft) window.LLWallDraft.clear("comment", sendId); refreshWallComments(sendId, commentTarget, sendButton.dataset.collection || "posts"); }).catch(function (error) { toast(error.message || "Не удалось отправить ответ.", "error"); });
   }, true);
 
   document.getElementById("adm").addEventListener("click", function (event) {
