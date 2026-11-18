@@ -304,7 +304,7 @@ function rWall(){var h='<div class="eb">Last Light</div><h1>Стена</h1><div 
  h+='<select id="wf" style="width:100%"><option value="all">Все посты</option><option value="Ожидает вердикта">Ожидают вердикта</option><option value="Принято">Принятые</option><option value="Отклонено">Отклонённые</option><option value="Событие">События</option></select>';
  if(isActivePlayer()||isMaster())h+='<textarea id="wt" rows="3" style="width:100%;margin-top:10px" placeholder="Ваш приказ или пост…"></textarea><div id="wall-draft-status" style="min-height:17px;margin-top:4px;color:var(--mu);font-size:11px">Текст черновика сохраняется автоматически в этом браузере.</div><input type="file" id="wi" accept="image/*" style="width:100%;margin:8px 0"><button class="pr" id="wp">Опубликовать</button>';else h+='<div class="auth-note" style="margin-top:10px">'+(LLAuthState.user?'Сначала отправьте заявку на отряд и дождитесь одобрения мастера.':'Войдите через Google и подайте заявку на отряд, чтобы писать на Стене.')+'</div>';
  h+='</div></div><div id="cloud-wall" style="max-width:760px;margin:0 auto 16px">Общие записи стены появятся после подключения Firebase.</div>';
- D.posts.forEach(function(p,i){if(!vis(p))return;if(wf!=='all'&&p.s!==wf)return;
+ D.posts.forEach(function(p,i){if(!vis(p))return;if(window.playerWallEntryVisible&&!window.playerWallEntryVisible(p))return;if(wf!=='all'&&p.s!==wf&&(isMaster()||(p.kind!=='event'&&p.s!=='Событие')))return;
   h+=postHtml(p,i);if(0)h+='<div class="card post"><div class="row" style="border:0"><b>'+esc(p.a)+' <span style="color:var(--mu);font-weight:400">· '+esc(p.ts)+'</span></b><span class="st '+(p.s==='Принято'||p.s==='Вердикт'||p.s==='Событие'?'ok':p.s==='Отклонено'?'no':'')+'">'+esc(p.s)+'</span></div><p style="margin:6px 0">'+esc(p.t)+'</p>'+(p.v?'<div style="color:var(--mu)">Вердикт: '+esc(p.v)+'</div>':'')+
   (isMaster()&&p.s==='Ожидает вердикта'?'<div style="margin-top:8px"><button data-v="'+i+'" data-r="Принято">Принять</button> <button data-v="'+i+'" data-r="Отклонено">Отклонить</button></div>':'')+'</div>'});
  $('wall').innerHTML=h;$('wf').value=wf;$('wf').onchange=function(){wf=this.value;rWall()};if($('wt'))bindWallDraft($('wt'),'post','main','wall-draft-status');renderCloudWall();
@@ -962,5 +962,5 @@ document.addEventListener('keydown',function(e){if(location.hash!=='#editor'||!E
 drawFeat();
 L.control.zoom({position:'bottomright',zoomInTitle:'Приблизить',zoomOutTitle:'Отдалить'}).addTo(map);
 clock();drawMap();drawLeg();go();
-</script><script src="./rp-social.js?v=20261118-mobile-scroll1"></script><script type="module" src="./firebase-auth.js?v=20261118-application-reject1"></script></body></html>
+</script><script src="./rp-social.js?v=20261118-wall-tabs1"></script><script type="module" src="./firebase-auth.js?v=20261118-application-reject1"></script></body></html>
 

@@ -278,6 +278,12 @@
   var masterDirectoryUpdatedAt = 0;
   var privateMarkers = [];
   var wallChannel = "all";
+  var playerWallSection = "news";
+  window.playerWallEntryVisible = function (entry) {
+    if (isMasterNow()) return true;
+    var order = entry.kind === "order" || (!entry.cloud && entry.kind !== "event" && entry.s !== "Событие");
+    return playerWallSection === "orders" ? order : !order;
+  };
   var privateMapLayer = L.layerGroup().addTo(map);
   var privateEditorLayer = null;
   var privateEditorCaptureBound = false;
@@ -398,6 +404,7 @@
   }
 
   function renderChannelFilter() {
+    if (!isMasterNow() && playerWallSection === "orders") return;
     var statusFilter = document.getElementById("wf");
     if (!statusFilter) return;
     var current = document.getElementById("wall-channel-filter");
@@ -618,9 +625,13 @@
       channelFilter.innerHTML = '<option value="all">Все каналы</option>' + values.map(function (channel) { return '<option value="' + esc(channel) + '">' + esc(channel) + '</option>'; }).join("");
       channelFilter.value = selectedChannel;
     }
-    if (wf !== "all") entries = entries.filter(function (p) { return p.status === wf; });
-    if (wallChannel !== "all") entries = entries.filter(function (p) { return p.kind === "broadcast" && (p.channel || "События") === wallChannel; });
-    if (!entries.length) { box.innerHTML = '<div class="card" style="color:var(--mu)">Пока нет общих публикаций.</div>'; return; }
+    entries = entries.filter(window.playerWallEntryVisible);
+    if ((isMasterNow() || playerWallSection === "orders") && wf !== "all") entries = entries.filter(function (p) { return p.status === wf; });
+    if ((isMasterNow() || playerWallSection === "news") && wallChannel !== "all") entries = entries.filter(function (p) { return p.kind === "broadcast" && (p.channel || "События") === wallChannel; });
+    if (!entries.length) {
+      var emptyText = !isMasterNow() && playerWallSection === "orders" ? "Приказов с выбранным статусом пока нет." : "Публикаций в выбранном канале пока нет.";
+      box.innerHTML = '<div class="card" style="color:var(--mu)">' + emptyText + '</div>'; return;
+    }
     box.innerHTML = entries.map(function (p) {
       var status = p.status || "Опубликовано";
       var broadcast = p.kind === "broadcast";
@@ -642,7 +653,47 @@
     if (window.LLWallDraft) entries.forEach(function (p) { var verdict = document.getElementById("wall-verdict-" + p.id); if (verdict) window.LLWallDraft.bind(verdict, "wall-verdict", p.id); });
   }
 
-  rWall = function () { baseWall(); renderMasterWallComposer(); renderChannelFilter(); renderWall(); };
+  function renderPlayerWallSections() {
+    if (isMasterNow()) return;
+    var root = document.getElementById("wall"), heading = root.querySelector("h1");
+    if (!heading) return;
+    var tabs = document.createElement("div");
+    tabs.className = "tabs";
+    tabs.style.cssText = "max-width:760px;margin:14px auto";
+    tabs.setAttribute("aria-label", "Разделы стены");
+    tabs.innerHTML = [["news", "Новости и слухи"], ["orders", "Приказы"]].map(function (tab) {
+      return '<button type="button" data-wall-section="' + tab[0] + '" class="' + (playerWallSection === tab[0] ? "on" : "") +
+        '" aria-pressed="' + (playerWallSection === tab[0]) + '">' + tab[1] + '</button>';
+    }).join("");
+    heading.after(tabs);
+    var filter = document.getElementById("wf"), card = filter && filter.closest(".card");
+    if (!card) return;
+    var orders = playerWallSection === "orders";
+    card.querySelector("h3").textContent = orders ? "Приказы отряда" : "Новости и слухи";
+    card.querySelector("h3").nextElementSibling.textContent = orders
+      ? "Отправляйте приказы и читайте вердикты мастера. Записи видны вам и мастерам."
+      : "События мира, радиопереговоры, слухи и объявления.";
+    filter.hidden = !orders;
+    if (orders) {
+      var eventOption = filter.querySelector('[value="Событие"]');
+      if (eventOption) eventOption.remove();
+      if (wf === "Событие") { wf = "all"; filter.value = "all"; }
+      var allOption = filter.querySelector('[value="all"]');
+      if (allOption) allOption.textContent = "Все приказы";
+      var input = document.getElementById("wt"), publish = document.getElementById("wp");
+      if (input) input.placeholder = "Опишите приказ отряда…";
+      if (publish) publish.textContent = "Отправить приказ";
+    } else {
+      card.querySelectorAll("#wt,#wi,#wp,#wall-draft-status,.auth-note").forEach(function (el) { el.hidden = true; });
+    }
+  }
+  document.getElementById("wall").addEventListener("click", function (event) {
+    var tab = event.target.closest("[data-wall-section]");
+    if (!tab || isMasterNow()) return;
+    playerWallSection = tab.getAttribute("data-wall-section") === "orders" ? "orders" : "news";
+    rWall();
+  });
+  rWall = function () { baseWall(); renderMasterWallComposer(); renderPlayerWallSections(); renderChannelFilter(); renderWall(); };
   renderCloudWall = renderWall;
   drawMap = function () { baseDrawMap(); drawPrivateMarkers(); };
   drawLeg = function () { baseDrawLeg(); renderPrivateLegend(); };
@@ -965,7 +1016,7 @@
     if (location.hash === "#marker-studio" && isMasterNow()) renderMarkerStudio();
     var composer = document.querySelector('[data-broadcast-composer="true"]');
     if (location.hash === "#wall" && isMasterNow() && !composer) renderMasterWallComposer();
-    else if (location.hash === "#wall" && !isMasterNow() && composer) { baseWall(); renderChannelFilter(); renderWall(); }
+    else if (location.hash === "#wall" && !isMasterNow() && composer) { rWall(); }
   });
   window.addEventListener("hashchange", function () {
     if (location.hash === "#wall" && isMasterNow()) setTimeout(renderMasterWallComposer, 0);
