@@ -505,6 +505,9 @@
   function renderStudioCanvas() {
     var svg = document.getElementById("marker-design-canvas");
     if (!svg) return;
+    var mobilePan = window.matchMedia && window.matchMedia('(max-width:700px)').matches && !studioTool && studioState.selected < 0;
+    var touchMode = mobilePan ? 'pan-y' : 'none', canvasWrap = svg.closest('.marker-studio-canvas-wrap');
+    svg.style.touchAction = touchMode; if (canvasWrap) canvasWrap.style.touchAction = touchMode;
     var color = validPrivateColor(studioState.color);
     var html = '<circle cx="50" cy="50" r="46" fill="#14150f" stroke="' + color + '" stroke-width="3"></circle>';
     html += studioShapesMarkup(studioState.shapes, color, studioState.selected);
@@ -531,9 +534,11 @@
   function renderMarkerStudio() {
     var root = document.getElementById("marker-studio-app");
     if (!root || !isMasterNow()) return;
+    var mainScroller = document.querySelector('main'), savedScrollTop = mainScroller ? mainScroller.scrollTop : 0;
     root.innerHTML = studioMarkup();
     updateRangeTree(root);
     renderStudioCanvas();
+    if (mainScroller) mainScroller.scrollTop = savedScrollTop;
   }
 
   function loadStudioTemplate(template) {
