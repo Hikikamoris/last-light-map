@@ -2,7 +2,7 @@
   "use strict";
   var main = document.querySelector("main"); if (!main) return;
   var base = new URL("./assets/atmosphere/", document.currentScript.src);
-  var scenes = ["scene-01.png", "scene-02.png", "scene-03.png", "scene-04.png", "scene-05.png", "scene-06.png"];
+  var scenes = ["scene-01-hd.webp", "scene-02-hd.webp", "scene-03-hd.webp", "scene-04-hd.webp", "scene-05-hd.webp", "scene-06-hd.webp"];
   var motion = window.matchMedia("(prefers-reduced-motion: reduce)");
   var backdrop = document.createElement("div"); backdrop.className = "site-atmosphere"; backdrop.setAttribute("aria-hidden", "true");
   backdrop.innerHTML = '<div class="site-atmosphere__scene"></div><div class="site-atmosphere__scene"></div>';
