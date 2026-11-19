@@ -170,7 +170,7 @@ nav a,.tabs button{font-size:13px}.st{font-size:11px}button.pr:hover{filter:brig
  .post{padding:14px}.rx button{min-height:40px}
 }
 @media(max-width:420px){.logo{font-size:15px}.etop h2{font-size:14px}.etop .save-status{white-space:normal;max-width:100%}.wrap{padding:10px}.card{padding:12px}}
-</style><link rel="stylesheet" href="./mobile.css?v=20261118-mobile-scroll1"><link rel="stylesheet" href="./order-articles.css?v=20261119-editor-cleanup1"><link rel="stylesheet" href="./atmosphere.css?v=20261119-editor-cleanup1"></head><body>
+</style><link rel="stylesheet" href="./mobile.css?v=20261118-mobile-scroll1"><link rel="stylesheet" href="./order-articles.css?v=20261119-map-roofs1"><link rel="stylesheet" href="./atmosphere.css?v=20261119-map-roofs1"></head><body>
 <header>
  <div class="logo"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v3M14 3v3M7 9a5 5 0 0110 0v8H7zM9 21h6M12 11v4"/></svg><span>Last <b>Light</b></span></div>
  <nav id="nav"><a href="#map">Карта</a><a href="#wall">Стена</a><a href="#state">Отряд</a><a href="#rules">Правила и механики</a><a href="#editor" id="edlink" style="display:none">Редактор карты</a><a href="#marker-studio" id="markerlink" style="display:none">Редактор значков</a><a href="#admin" id="admlink" style="display:none"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg> Мастер</a></nav>
@@ -195,7 +195,7 @@ nav a,.tabs button{font-size:13px}.st{font-size:11px}button.pr:hover{filter:brig
 <script>
 var TYPES={mine:['⛏','Шахты и пещеры'],post:['🛡','Блок-пост'],horde:['☠','Возможна орда'],factory:['🏭','Заброшенный завод'],stash:['📦','Возможен склад'],grave:['⚰','Кладбище'],sawmill:['🪚','Лесопилка'],tower:['🗼','Вышка'],farm:['🌾','Ферма'],camp:['⛺','База отдыха'],fish:['🎣','Рыболовля'],hosp:['🏥','Больница'],village:['🏘','Деревня'],plane:['✈','Упавший самолёт'],port:['⚓','Порт'],metro:['Ⓜ','Метро']};
 var SEASONS=['Весна','Лето','Осень','Зима'],COLORS=['#e2b94a','#4fb3a5','#c0392b','#6a8fd8','#b36ad8','#8fd14f'];
-var W=1280,H=715,IMG="map-base.svg";
+var W=1280,H=715,IMG="assets/maps/active-restored.webp?v=20261119-roofs1";
 function esc(s){return String(s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
 function $(i){return document.getElementById(i)}
 var D={turn:1,me:null,log:[],
@@ -954,4 +954,4 @@ document.addEventListener('keydown',function(e){if(location.hash!=='#editor'||!E
 drawFeat();
 L.control.zoom({position:'bottomright',zoomInTitle:'Приблизить',zoomOutTitle:'Отдалить'}).addTo(map);
 clock();drawMap();drawLeg();go();
-</script><script src="./order-tables.js?v=20261119-editor-cleanup1"></script><script src="./order-articles.js?v=20261119-editor-cleanup1"></script><script src="./rp-social.js?v=20261119-editor-cleanup1"></script><script src="./squad-orders.js?v=20261119-editor-cleanup1"></script><script src="./atmosphere.js?v=20261119-editor-cleanup1"></script><script type="module" src="./firebase-auth.js?v=20261119-editor-cleanup1"></script></body></html>
+</script><script src="./order-tables.js?v=20261119-map-roofs1"></script><script src="./order-articles.js?v=20261119-map-roofs1"></script><script src="./rp-social.js?v=20261119-map-roofs1"></script><script src="./squad-orders.js?v=20261119-map-roofs1"></script><script src="./atmosphere.js?v=20261119-map-roofs1"></script><script type="module" src="./firebase-auth.js?v=20261119-map-roofs1"></script></body></html>
