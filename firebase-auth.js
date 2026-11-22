@@ -285,6 +285,39 @@ const api = {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Публиковать отряды и карту может только мастер.");
     await setDoc(doc(db, "public", "world"), worldDocument(world));
   },
+  async uploadCharacterPortrait(file) {
+    if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) throw new Error("Добавлять портрет может только мастер.");
+    if (!file || !["image/webp", "image/jpeg", "image/png"].includes(file.type) || !file.size || file.size > 120000) throw new Error("Не удалось подготовить фотографию для загрузки.");
+    const image = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Не удалось прочитать фотографию."));
+      reader.readAsDataURL(file);
+    });
+    const id = "portrait_" + doc(collection(db, "public")).id;
+    await setDoc(doc(db, "public", id), { kind: "characterPortrait", image, uploadedBy: state.user.uid, createdAt: serverTimestamp() });
+    return { id };
+  },
+  async readCharacterPortrait(id) {
+    if (!db || !/^portrait_[a-zA-Z0-9]{10,40}$/.test(String(id))) throw new Error("Портрет недоступен.");
+    const snap = await getDoc(doc(db, "public", id));
+    const value = snap.exists() ? snap.data() : null;
+    const match = value?.kind === "characterPortrait" && typeof value.image === "string" && value.image.length <= 180000 && value.image.match(/^data:(image\/(?:webp|jpeg|png));base64,([a-zA-Z0-9+/=]+)$/);
+    if (!match) throw new Error("Портрет недоступен.");
+    const bytes = Uint8Array.from(atob(match[2]), character => character.charCodeAt(0));
+    return new Blob([bytes], { type: match[1] });
+  },
+  async deleteCharacterPortrait(id) {
+    if (!db || !state.user || !["master", "owner"].includes(state.profile?.role) || !/^portrait_[a-zA-Z0-9]{10,40}$/.test(String(id))) return false;
+    const worldRef = doc(db, "public", "world"), portraitRef = doc(db, "public", id);
+    return runTransaction(db, async transaction => {
+      const snap = await transaction.get(worldRef);
+      const squads = snap.exists() && Array.isArray(snap.data().squads) ? snap.data().squads : [];
+      if (squads.some(squad => Array.isArray(squad.mem) && squad.mem.some(member => member?.dossier?.portrait?.id === id))) return false;
+      transaction.delete(portraitRef);
+      return true;
+    });
+  },
   async updateSquadDossier(squadId, patch, expected) {
     if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) throw new Error("Изменять статистику может только мастер.");
     const keys = Object.keys(patch || {});

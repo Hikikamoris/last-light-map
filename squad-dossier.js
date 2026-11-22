@@ -32,15 +32,20 @@
  }
  function title(text,action,label){return '<div class="ds-titlebar"><h2>'+e(text)+'</h2>'+(isMaster()&&action?button(label||'Добавить',action):'')+'</div>'}
  function overview(s){var d=data(s);return '<div class="ds-layout"><section class="ds-box">'+title('Состояние отряда')+meter('Мораль',s.mor,'Общее эмоциональное состояние')+METRICS.slice(0,3).map(function(m){return meter(m[1],d[m[0]],m[2],m[3])}).join('')+'</section><section class="ds-box">'+title('Готовность и лагерь')+METRICS.slice(3).map(function(m){return meter(m[1],d[m[0]],m[2],m[3])}).join('')+'<div class="ds-note">Показатели обновляет мастер по результатам действий и вердиктов. Незаполненные значения отмечены прочерком.</div></section></div>'}
+
+ function personIdentity(m,i){
+  var hasPortrait=!!(m.dossier&&m.dossier.portrait);
+  return '<section class="ds-box" style="margin-bottom:16px"><div class="ds-heading ds-person-heading"><div class="ds-person-identity">'+LLCharacterEquipment.portrait(m,'large')+'<div><h2>'+e(m.n)+'</h2><div class="ds-caption">'+e([m.spec,m.age?'Возраст: '+m.age:'',m.sex].filter(Boolean).join(' · '))+'</div></div></div><div class="ds-person-header-actions"><span class="ds-badge">'+(i===0?'Глава отряда':'Участник')+'</span>'+(isMaster()?button(hasPortrait?'Изменить портрет':'Добавить портрет','edit-portrait',i):'')+'</div></div></section>';
+ }
  function personnel(s){
   var list=roster(s);
   if(memberIndex!==null&&list[memberIndex])return person(s,list[memberIndex],memberIndex);
   memberIndex=null;
-  return '<section class="ds-box">'+title('Личный состав','add-member','Добавить участника')+'<p class="ds-caption">Выберите участника, чтобы открыть состояние, навыки и снаряжение.</p>'+(list.length?'<div class="ds-card-list">'+list.map(function(m,i){var d=m.dossier||{};return '<button class="ds-person" data-ds="person" data-index="'+i+'"><b>'+e(m.n||'Без имени')+(i===0?' · глава':'')+'</b><span class="ds-caption">'+e([m.spec,d.mood].filter(Boolean).join(' · '))+'</span><small>Здоровье '+value(d.health)+' · Усталость '+value(d.fatigue)+'</small></button>'}).join('')+'</div>':empty('Состав ещё не заполнен. Мастер может добавить участников отряда.'))+'</section>';
+  return '<section class="ds-box">'+title('Личный состав','add-member','Добавить участника')+'<p class="ds-caption">Выберите участника, чтобы открыть состояние, навыки и снаряжение.</p>'+(list.length?'<div class="ds-card-list">'+list.map(function(m,i){var d=m.dossier||{};return '<button class="ds-person" data-ds="person" data-index="'+i+'"><span class="ds-person-main">'+LLCharacterEquipment.portrait(m)+'<span><b>'+e(m.n||'Без имени')+(i===0?' · глава':'')+'</b><span class="ds-caption">'+e([m.spec,d.mood].filter(Boolean).join(' · '))+'</span><small>Здоровье '+value(d.health)+' · Усталость '+value(d.fatigue)+'</small></span></span></button>'}).join('')+'</div>':empty('Состав ещё не заполнен. Мастер может добавить участников отряда.'))+'</section>';
  }
  function person(s,m,i){
   var d=m.dossier||{},skills=d.skills||{};
-  return '<div class="ds-actions" style="margin:0 0 16px">'+button('Назад к составу','people')+(isMaster()?button('Редактировать участника','edit-member',i)+button('Удалить из состава','remove-member',i):'')+'</div><section class="ds-box" style="margin-bottom:16px"><div class="ds-heading"><div><h2>'+e(m.n)+'</h2><div class="ds-caption">'+e([m.spec,m.age?'Возраст: '+m.age:'',m.sex].filter(Boolean).join(' · '))+'</div></div><span class="ds-badge">'+(i===0?'Глава отряда':'Участник')+'</span></div></section><div class="ds-layout"><section class="ds-box"><h2>Физическое состояние</h2>'+PHYSICAL.map(function(a){return meter(a[1],d[a[0]],'',a[2])}).join('')+'</section><section class="ds-box"><h2>Психологическое состояние</h2><div class="ds-caption">Настроение</div><p>'+e(d.mood||'Не указано')+'</p>'+meter('Уверенность',d.confidence)+ '<h3>Характер и черты</h3><div class="ds-detail-text">'+e(d.traits||'Пока не описаны')+'</div><h3>Предыстория</h3><div class="ds-detail-text">'+e(m.bio||'Пока не описана')+'</div></section><section class="ds-box"><h2>Навыки</h2>'+SKILLS.map(function(a){return meter(a[1],skills[a[0]],'',false,'skill')}).join('')+'</section><section class="ds-box"><h2>Отношения</h2>'+(arr(d.relations).length?arr(d.relations).map(function(r){return meter(r.name,r.value,r.type,false,'skill')}).join(''):empty('Отношения пока не описаны.'))+'<h3>Личная сюжетная линия</h3><div class="ds-detail-text">'+e(d.story||'Личная история ещё не задана.')+'</div></section><section class="ds-box ds-full"><h2>Экипировка · 8 слотов</h2><div class="ds-gear">'+GEAR.map(function(label,k){var g=arr(d.gear)[k]||{};return '<details><summary><span class="ds-caption">'+(k+1)+'. '+label+'</span><br><b>'+e(g.name||'Пустой слот')+'</b></summary><div class="ds-detail-text">'+e(g.description||'Описание не задано.')+'</div></details>'}).join('')+'</div>'+(m.inv?'<h3>Личный инвентарь</h3><div class="ds-detail-text">'+e(m.inv)+'</div>':'')+'</section></div>';
+  return '<div class="ds-actions" style="margin:0 0 16px">'+button('Назад к составу','people')+(isMaster()?button('Редактировать участника','edit-member',i)+button('Удалить из состава','remove-member',i):'')+'</div>'+personIdentity(m,i)+'<div class="ds-layout"><section class="ds-box"><h2>Физическое состояние</h2>'+PHYSICAL.map(function(a){return meter(a[1],d[a[0]],'',a[2])}).join('')+'</section><section class="ds-box"><h2>Психологическое состояние</h2><div class="ds-caption">Настроение</div><p>'+e(d.mood||'Не указано')+'</p>'+meter('Уверенность',d.confidence)+ '<h3>Характер и черты</h3><div class="ds-detail-text">'+e(d.traits||'Пока не описаны')+'</div><h3>Предыстория</h3><div class="ds-detail-text">'+e(m.bio||'Пока не описана')+'</div></section><section class="ds-box"><h2>Навыки</h2>'+SKILLS.map(function(a){return meter(a[1],skills[a[0]],'',false,'skill')}).join('')+'</section><section class="ds-box"><h2>Отношения</h2>'+(arr(d.relations).length?arr(d.relations).map(function(r){return meter(r.name,r.value,r.type,false,'skill')}).join(''):empty('Отношения пока не описаны.'))+'<h3>Личная сюжетная линия</h3><div class="ds-detail-text">'+e(d.story||'Личная история ещё не задана.')+'</div></section><section class="ds-box ds-full"><h2>Экипировка · 8 слотов</h2>'+LLCharacterEquipment.render(d,i,isMaster())+(m.inv?'<h3>Личный инвентарь</h3><div class="ds-detail-text">'+e(m.inv)+'</div>':'')+'</section></div>';
  }
  function stock(s){var d=data(s),r=s.r||{},extra=d.stock||{};return '<section class="ds-box">'+title('Общие запасы','edit-stock','Изменить запасы')+'<div class="ds-stock">'+STOCK.map(function(a){return '<article><b>'+a[1]+'</b><strong>'+value(a[0]==='fuel'||a[0]==='equipment'?extra[a[0]]:r[a[0]])+'</strong><span class="ds-caption">'+a[2]+'</span></article>'}).join('')+'</div><div class="ds-note">Продовольствие и вода учитываются за ход. Топливо хранится на общем складе, техническое состояние — в карточке транспорта. Запасы обновляет мастер.</div></section>'}
  function filters(kind,current,options){return '<div class="ds-filters">'+Object.keys(options).map(function(k){return '<button data-ds="'+kind+'" data-filter="'+k+'" class="'+(current===k?'on':'')+'">'+e(options[k])+'</button>'}).join('')+'</div>'}
@@ -86,10 +91,22 @@
   v=v||{};if(kind==='step'&&!v.status)v.status='next';return '<div class="ds-edit-row" data-ds-row="'+kind+'">'+(kind==='step'?'<label class="ds-field">Этап<input data-key="title" value="'+e(v.title)+'" maxlength="300" required></label><label class="ds-field">Состояние<select data-key="status">'+Object.keys(STEPS).map(function(k){return '<option value="'+k+'" '+(v.status===k?'selected':'')+'>'+STEPS[k]+'</option>'}).join('')+'</select></label>':'<label class="ds-field">Участник<input data-key="name" value="'+e(v.name)+'" maxlength="100" required></label><div>'+ '<label class="ds-field">Отношение<input data-key="type" value="'+e(v.type)+'" maxlength="100"></label><label class="ds-field">Уровень / 100<input data-key="value" type="number" min="0" max="100" value="'+e(v.value)+'"></label></div>')+'<button type="button" data-ds-row-remove>Убрать</button></div>';
  }
  function extras(kind,values){return '<section class="ds-edit-section"><h3>'+(kind==='step'?'Этапы задачи':'Отношения')+'</h3><div data-ds-rows="'+kind+'">'+arr(values).map(function(v){return row(kind,v)}).join('')+'</div><button type="button" data-ds-row-add="'+kind+'">Добавить '+(kind==='step'?'этап':'отношение')+'</button></section>'}
+
+ function portraitControls(entity){
+  var position=(entity.dossier||{}).portraitPosition||'top';
+  return '<section class="ds-portrait-editor"><div data-portrait-preview>'+LLCharacterEquipment.portrait(entity,'large')+'</div><div class="ds-portrait-controls"><h3>Портрет персонажа</h3><p>Фотография из файлов или галереи. JPG, PNG, WebP · до 20 МБ.</p><input type="file" accept="image/jpeg,image/png,image/webp" data-portrait-file hidden><div class="ds-actions"><button type="button" data-portrait-choose>Выбрать фото</button><button type="button" data-portrait-remove>Убрать портрет</button></div><label class="ds-field" style="margin-top:12px">Положение в рамке<select name="dossier.portraitPosition" data-portrait-position>'+[['top','Выше'],['center','По центру'],['bottom','Ниже']].map(function(o){return '<option value="'+o[0]+'" '+(o[0]===position?'selected':'')+'>'+o[1]+'</option>'}).join('')+'</select></label><span class="ds-portrait-message" role="status" data-portrait-message>Портрет изменится после сохранения карточки.</span></div></section>';
+ }
+ function releasePortraitPreview(){if(editor&&editor.portraitPreview){URL.revokeObjectURL(editor.portraitPreview);editor.portraitPreview=null}}
+ function updatePortraitPreview(){
+  var preview=dialog.querySelector('[data-portrait-preview]');if(!preview||!editor)return;
+  if(editor.portraitPreview)preview.innerHTML='<span class="character-portrait is-large"><img class="is-ready" alt="Новый портрет" src="'+e(editor.portraitPreview)+'"></span>';
+  else preview.innerHTML=LLCharacterEquipment.portrait(editor.entity,'large');
+  var position=dialog.querySelector('[data-portrait-position]');if(position)preview.querySelector('.character-portrait').dataset.position=position.value;
+ }
  function openEdit(kind,index){
-  if(!isMaster())return;var s=squad(),d=data(s),listKey={member:'mem',task:'tasks',vehicle:'vehicles',event:'events'}[kind],list=kind==='member'?roster(s):arr(d[listKey]);
+  if(!isMaster())return;releasePortraitPreview();var s=squad(),d=data(s),listKey={member:'mem',task:'tasks',vehicle:'vehicles',event:'events'}[kind],list=kind==='member'?roster(s):arr(d[listKey]);
   var entity=kind==='overview'||kind==='stock'?clone(s):clone(list[index]||{});
-  editor={kind:kind,index:index,squadId:s.id,source:clone(s),entity:entity,listKey:listKey};
+  editor={kind:kind,index:index,squadId:s.id,source:clone(s),entity:entity,listKey:listKey,portraitBlob:null,portraitPreview:null,portraitBusy:false,oldPortraitId:get(entity,"dossier.portrait.id")||null};
   var content='',name={overview:'Показатели отряда',stock:'Общие запасы',member:'Участник отряда',task:'Задача',vehicle:'Транспорт',event:'Событие хроники'}[kind];
   if(kind==='overview'){
    content=field('Статус лагеря / отряда','dossier.status')+field('Местоположение','dossier.location')+field('Вместимость отряда','dossier.capacity','number',null,false,0,1000)+field('Мораль','mor','number',null,true)+numberFields(METRICS,'dossier.');
@@ -106,7 +123,7 @@
   if(kind==='member'){
    extra='<section class="ds-edit-section"><h3>Экипировка · 8 слотов</h3><div class="ds-form-grid">'+GEAR.map(function(label,k){return field((k+1)+'. '+label,'dossier.gear.'+k+'.name')+field('Описание предмета','dossier.gear.'+k+'.description','textarea')}).join('')+'</div></section>'+extras('relation',(entity.dossier||{}).relations);
   }
-  dialog.innerHTML='<form><div class="ds-dialog-head"><h2 id="ds-edit-title">'+name+'</h2><button type="button" data-ds-cancel aria-label="Закрыть">×</button></div><div class="ds-dialog-body"><div class="ds-caption" style="margin-bottom:16px">Изменения станут видны игроку после сохранения. Пустой показатель означает «не задано».</div><div class="ds-form-grid">'+content+'</div>'+extra+'</div><div class="ds-dialog-foot"><span class="ds-form-error" role="status"></span><button type="button" data-ds-cancel>Отмена</button><button class="pr" type="submit">Сохранить</button></div></form>';
+  dialog.innerHTML='<form><div class="ds-dialog-head"><h2 id="ds-edit-title">'+name+'</h2><button type="button" data-ds-cancel aria-label="Закрыть">×</button></div><div class="ds-dialog-body"><div class="ds-caption" style="margin-bottom:16px">Изменения станут видны игроку после сохранения. Пустой показатель означает «не задано».</div>'+(kind==='member'?portraitControls(entity):'')+'<div class="ds-form-grid">'+content+'</div>'+extra+'</div><div class="ds-dialog-foot"><span class="ds-form-error" role="status"></span><button type="button" data-ds-cancel>Отмена</button><button class="pr" type="submit">Сохранить</button></div></form>';
   dialog.showModal();
  }
  function collect(){
@@ -136,26 +153,65 @@
   if(add){var kind=add.getAttribute('data-ds-row-add'),container=dialog.querySelector('[data-ds-rows="'+kind+'"]');if(container.children.length<100)container.insertAdjacentHTML('beforeend',row(kind));}
  });
  dialog.addEventListener('submit',async function(ev){
-  ev.preventDefault();if(!isMaster()||!dialog.querySelector('form').reportValidity())return;
+  ev.preventDefault();if(!isMaster()||!dialog.querySelector('form').reportValidity())return;if(editor.portraitBusy){dialog.querySelector('.ds-form-error').textContent='Дождитесь подготовки фотографии.';return}
   var entity=collect(),source=editor.source,patch={},kind=editor.kind;
   if(kind==='overview'){if(num(get(entity,'dossier.capacity'))!==null&&Number(entity.dossier.capacity)<roster(source).length){dialog.querySelector('.ds-form-error').textContent='Вместимость меньше текущего состава.';return}patch={dossier:entity.dossier,mor:entity.mor};}
   else if(kind==='stock'){patch={r:entity.r,dossier:entity.dossier||{}};}
   else if(kind==='member'){var members=clone(roster(source));if(editor.index==null)members.push(entity);else members[editor.index]=entity;patch={mem:members};}
   else{var dossier=clone(data(source)),items=arr(dossier[editor.listKey]).slice();if(editor.index==null){entity.id=uid();items.push(entity)}else items[editor.index]=entity;dossier[editor.listKey]=items;patch={dossier:dossier};}
-  var submit=dialog.querySelector('[type=submit]');submit.disabled=true;
-  try{await commit(patch,source);dialog.close()}catch(error){dialog.querySelector('.ds-form-error').textContent=error.message||'Не удалось сохранить. Попробуйте снова.'}finally{submit.disabled=false}
+  var submit=dialog.querySelector('[type=submit]'),operation=editor,newPortrait=null;submit.disabled=true;dialog.dataset.saving='true';dialog.querySelectorAll('input,textarea,select,button').forEach(function(b){b.disabled=true});
+  try{
+   if(kind==='member'&&operation.portraitBlob){
+    if(!window.LLAuth||!window.LLAuth.uploadCharacterPortrait)throw Error('Сервис портретов ещё загружается.');
+    dialog.querySelector('.ds-form-error').textContent='Загружаю портрет…';
+    newPortrait=await window.LLAuth.uploadCharacterPortrait(operation.portraitBlob);if(editor!==operation||!dialog.open)throw Error('Сохранение отменено.');entity.dossier.portrait=newPortrait;
+   }
+   await commit(patch,source);
+   if(kind==='member'&&operation.oldPortraitId&&operation.oldPortraitId!==get(entity,'dossier.portrait.id')&&window.LLAuth.deleteCharacterPortrait)window.LLAuth.deleteCharacterPortrait(operation.oldPortraitId).catch(function(){});
+   dialog.close();
+  }catch(error){
+   if(newPortrait&&window.LLAuth.deleteCharacterPortrait)window.LLAuth.deleteCharacterPortrait(newPortrait.id).catch(function(){});
+   dialog.querySelector('.ds-form-error').textContent=error.message||'Не удалось сохранить. Попробуйте снова.';
+  }finally{submit.disabled=false;dialog.dataset.saving='false';dialog.querySelectorAll('input,textarea,select,button').forEach(function(b){b.disabled=false})}
+ });
+
+ dialog.addEventListener('cancel',function(ev){if(dialog.dataset.saving==='true')ev.preventDefault()});
+ dialog.addEventListener('close',releasePortraitPreview);
+ dialog.addEventListener('click',function(ev){
+  if(ev.target.closest('[data-portrait-choose]'))dialog.querySelector('[data-portrait-file]').click();
+  if(ev.target.closest('[data-portrait-remove]')){
+   editor.portraitRequest=(editor.portraitRequest||0)+1;editor.portraitBusy=false;editor.portraitBlob=null;releasePortraitPreview();set(editor.entity,'dossier.portrait',null);
+   dialog.querySelector('[data-portrait-file]').value='';updatePortraitPreview();dialog.querySelector('[data-portrait-message]').textContent='Портрет будет убран после сохранения.';
+  }
+ });
+ dialog.addEventListener('change',async function(ev){
+  if(ev.target.matches('[data-portrait-position]')){updatePortraitPreview();return}
+  if(!ev.target.matches('[data-portrait-file]')||!ev.target.files[0]||!isMaster())return;
+  var session=editor,request=(session.portraitRequest||0)+1;session.portraitRequest=request;session.portraitBusy=true;
+  dialog.querySelector('[data-portrait-message]').textContent='Подготавливаю фотографию…';
+  try{
+   var blob=await LLCharacterEquipment.preparePortrait(ev.target.files[0]);
+   if(editor!==session||session.portraitRequest!==request||!dialog.open)return;
+   releasePortraitPreview();session.portraitBlob=blob;session.portraitPreview=URL.createObjectURL(blob);updatePortraitPreview();dialog.querySelector('[data-portrait-message]').textContent='Фотография готова. Сохраните карточку.';
+  }catch(error){if(editor===session&&session.portraitRequest===request&&dialog.open)dialog.querySelector('[data-portrait-message]').textContent=error.message}
+  finally{if(editor===session&&session.portraitRequest===request)session.portraitBusy=false}
  });
  var confirmDialog=document.createElement('dialog');confirmDialog.className='ds-dialog';confirmDialog.setAttribute('aria-label','Удалить запись');document.body.append(confirmDialog);
  function remove(kind,index){
   if(!isMaster())return;var source=clone(squad()),key={member:'mem',task:'tasks',vehicle:'vehicles',event:'events'}[kind],record=(kind==='member'?roster(source):arr(data(source)[key]))[index];if(!record)return;
   confirmDialog.innerHTML='<div class="ds-dialog-body"><h2>Удалить запись?</h2><p class="ds-detail-text">'+e(record.title||record.name)+'</p><p class="ds-caption">Запись исчезнет из статистики отряда.</p><div class="ds-form-error" role="status"></div></div><div class="ds-dialog-foot"><button data-cancel>Отмена</button><button class="pr" data-confirm>Удалить</button></div>';
   confirmDialog.querySelector('[data-cancel]').onclick=function(){confirmDialog.close()};
-  confirmDialog.querySelector('[data-confirm]').onclick=async function(){var b=this;b.disabled=true;try{var patch;if(kind==='member'){var members=clone(roster(source));members.splice(index,1);patch={mem:members};memberIndex=null}else{var d=clone(data(source));d[key].splice(index,1);patch={dossier:d}}await commit(patch,source);confirmDialog.close()}catch(er){confirmDialog.querySelector('.ds-form-error').textContent=er.message;b.disabled=false}};
+  confirmDialog.querySelector('[data-confirm]').onclick=async function(){var b=this;b.disabled=true;try{var patch;if(kind==='member'){var members=clone(roster(source));members.splice(index,1);patch={mem:members};memberIndex=null}else{var d=clone(data(source));d[key].splice(index,1);patch={dossier:d}}await commit(patch,source);if(kind==='member'&&record.dossier&&record.dossier.portrait&&window.LLAuth.deleteCharacterPortrait)window.LLAuth.deleteCharacterPortrait(record.dossier.portrait.id).catch(function(){});confirmDialog.close()}catch(er){confirmDialog.querySelector('.ds-form-error').textContent=er.message;b.disabled=false}};
   confirmDialog.showModal();
  }
  document.getElementById('state').addEventListener('change',function(ev){if(ev.target.matches('[data-ds-select]')&&isMaster()){selected=ev.target.value;var s=squad();if(s)D.me=s.id;memberIndex=null;render()}});
  document.getElementById('state').addEventListener('click',function(ev){
   var b=ev.target.closest('[data-ds]');if(!b)return;var action=b.getAttribute('data-ds'),i=b.hasAttribute('data-index')?Number(b.getAttribute('data-index')):null;
+  if(action==='edit-gear'||action==='edit-portrait'){
+   if(!isMaster())return;openEdit('member',i);
+   var target=action==='edit-portrait'?dialog.querySelector('[data-portrait-choose]'):dialog.querySelector('[name="dossier.gear.'+Number(b.getAttribute('data-slot'))+'.name"]');
+   if(target)target.focus();return;
+  }
   if(action==='person'){memberIndex=i;render();return}
   if(action==='people'){memberIndex=null;render();return}
   if(action==='task-filter'){taskFilter=b.getAttribute('data-filter');render();return}
