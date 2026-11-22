@@ -285,6 +285,33 @@ const api = {
     if (!db || !["master", "owner"].includes(state.profile?.role)) throw new Error("Публиковать отряды и карту может только мастер.");
     await setDoc(doc(db, "public", "world"), worldDocument(world));
   },
+  async updateSquadDossier(squadId, patch, expected) {
+    if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) throw new Error("Изменять статистику может только мастер.");
+    const keys = Object.keys(patch || {});
+    if (!keys.length || keys.some(key => !["dossier", "mem", "mor", "r"].includes(key))) throw new Error("Неизвестные поля статистики.");
+    if (patch.mem !== undefined && (!Array.isArray(patch.mem) || patch.mem.length > 100)) throw new Error("В составе может быть не больше 100 участников.");
+    for (const key of ["dossier", "r"]) if (patch[key] !== undefined && (!patch[key] || typeof patch[key] !== "object" || Array.isArray(patch[key]))) throw new Error("Неверный формат данных.");
+    if (patch.mor !== undefined && patch.mor !== null && (!Number.isFinite(patch.mor) || patch.mor < 0 || patch.mor > 100)) throw new Error("Мораль должна быть от 0 до 100.");
+    const clean = JSON.parse(JSON.stringify(patch));
+    if (new Blob([JSON.stringify(clean)]).size > 200000) throw new Error("Слишком много данных в записи. Сократите описания.");
+    const stable = value => value == null ? "null" : Array.isArray(value) ? "[" + value.map(stable).join(",") + "]" : typeof value === "object" ? "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + stable(value[key])).join(",") + "}" : JSON.stringify(value);
+    const ref = doc(db, "public", "world");
+    return runTransaction(db, async transaction => {
+      const snap = await transaction.get(ref);
+      if (!snap.exists()) throw new Error("Общая карта ещё не опубликована.");
+      const world = snap.data(), squads = Array.isArray(world.squads) ? world.squads.slice() : [];
+      const index = squads.findIndex(squad => String(squad?.id) === String(squadId));
+      if (index < 0) throw new Error("Отряд удалён или больше недоступен.");
+      const current = squads[index];
+      if (keys.some(key => stable(current[key]) !== stable(expected?.[key]))) throw new Error("Эти данные уже изменил другой мастер. Закройте форму и откройте её заново.");
+      const updated = { ...current, ...clean, statsRevision: Number(current.statsRevision || 0) + 1 };
+      if (clean.mem !== undefined) updated.dossier = { ...(updated.dossier || {}), rosterManaged: true };
+      squads[index] = updated;
+      if (new Blob([JSON.stringify({ ...world, squads })]).size > 850000) throw new Error("Общая база заполнена. Сократите описания или старые записи.");
+      transaction.update(ref, { squads, updatedBy: state.user.uid, updatedAt: serverTimestamp() });
+      return updated;
+    });
+  },
   async initializeWorld(world) {
     if (!db || state.profile?.role !== "owner") throw new Error("Первую общую версию может опубликовать только создатель проекта.");
     const ref = doc(db, "public", "world");
@@ -750,4 +777,3 @@ if (!isUsableConfig(config)) {
     publish();
   }
 }
-
