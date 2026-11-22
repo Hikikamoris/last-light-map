@@ -60,7 +60,7 @@ html,body{overflow-x:hidden;scrollbar-color:#625638 #141510;scrollbar-width:thin
  #v-editor{overflow:hidden;min-height:0}
  #ed2{min-height:0}
  .etop{height:52px;min-height:52px;max-height:none;flex-wrap:nowrap;gap:5px;padding:5px 7px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;scrollbar-width:thin;scrollbar-color:#625638 transparent}
- .etop h2{position:sticky;left:0;z-index:2;flex:0 0 auto;width:auto;margin:0;padding-right:7px;background:linear-gradient(90deg,var(--pn) 88%,transparent);font-size:14px}
+ .etop h2{position:static;z-index:auto;flex:0 0 auto;width:auto;margin:0;padding-right:7px;background:none;font-size:14px}
  .etop .sp{display:none}
  .etop button,.etop a{display:inline-flex;flex:0 0 auto;align-items:center;justify-content:center;min-height:40px;padding:7px 9px;white-space:nowrap}
  .etop .chip{min-height:38px;padding:6px 10px}
@@ -131,4 +131,3 @@ html,body{overflow-x:hidden;scrollbar-color:#625638 #141510;scrollbar-width:thin
   .einsp{max-height:min(38dvh,330px)}
  }
 }
-
