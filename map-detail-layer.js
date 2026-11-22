@@ -6,6 +6,7 @@
   var version = script && new URL(script.src, document.baseURI).search || "";
   var attached = new WeakMap();
   var COLUMNS = 8, ROWS = 5, MIN_ZOOM = 2, CACHE_SIZE = 12, MAX_REQUESTS = 4;
+  var TILE_CORE_WIDTH = 1280, TILE_CORE_HEIGHT = 1144;
   var PANE = "mapDetailTiles";
 
   function attach(map) {
@@ -13,6 +14,7 @@
     if (attached.has(map)) return attached.get(map);
     var width = Number(window.W) || 1280, height = Number(window.H) || 715;
     var tileWidth = width / COLUMNS, tileHeight = height / ROWS;
+    var gutterX = tileWidth / TILE_CORE_WIDTH, gutterY = tileHeight / TILE_CORE_HEIGHT;
     var records = new Map(), wanted = new Set(), queue = [], inflight = 0, clock = 0;
     var disposed = false, started = false;
     var pane = map.getPane(PANE) || map.createPane(PANE);
@@ -122,7 +124,11 @@
                 record = {
                   id: id, state: "queued", used: 0, photo: null, overlay: null,
                   url: new URL(id + ".webp" + version, base).href,
-                  bounds: [[height - (row + 1) * tileHeight, column * tileWidth], [height - row * tileHeight, (column + 1) * tileWidth]]
+                  // Shared edge pixels cover projection rounding between adjacent tiles at fractional zoom.
+                  bounds: [
+                    [Math.max(0, height - (row + 1) * tileHeight - gutterY), Math.max(0, column * tileWidth - gutterX)],
+                    [Math.min(height, height - row * tileHeight + gutterY), Math.min(width, (column + 1) * tileWidth + gutterX)]
+                  ]
                 };
                 records.set(id, record);
               }
