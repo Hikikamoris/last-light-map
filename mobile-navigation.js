@@ -11,7 +11,7 @@
  header.prepend(toggle);
  var dialog=document.createElement('dialog');
  dialog.id='mobile-navigation';dialog.setAttribute('aria-labelledby','mobile-navigation-title');
- dialog.innerHTML='<div class="mobile-menu-heading"><div><small>Divide et Impera I Последний рассвет</small><h2 id="mobile-navigation-title">Разделы</h2></div><button type="button" aria-label="Закрыть меню">×</button></div>';
+ dialog.innerHTML='<div class="mobile-menu-heading"><div><small>Divide et Impera Последний рассвет</small><h2 id="mobile-navigation-title">Разделы</h2></div><button type="button" aria-label="Закрыть меню">×</button></div>';
  document.body.append(dialog);
  var context=document.createElement('div');context.id='mobile-context';context.setAttribute('aria-label','Подразделы');context.hidden=true;header.after(context);
  function close(){if(dialog.open)dialog.close();toggle.setAttribute('aria-expanded','false');}

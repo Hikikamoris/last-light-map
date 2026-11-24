@@ -1,4 +1,4 @@
-/* Mobile layout for Divide et Impera I Последний рассвет. Desktop styles remain in app.html. */
+/* Mobile layout for Divide et Impera Последний рассвет. Desktop styles remain in app.html. */
 :root{color-scheme:dark}
 html,body{overflow-x:hidden;scrollbar-color:#625638 #141510;scrollbar-width:thin}
 ::-webkit-scrollbar{width:8px;height:8px;background:#141510}
