@@ -2,7 +2,7 @@
  'use strict';
  var cloud=null,watching=false,ready=false;
  function refresh(){if(location.hash==='#rules')rRules();if(location.hash==='#admin'&&at==='Правила')rAdm()}
- function start(){if(watching||!window.LLAuth||!LLAuth.watchRules)return;watching=true;LLAuth.watchRules(function(sections){ready=true;cloud=sections?sections.map(function(r){return[r.title,r.text]}):null;if(cloud){RS=JSON.parse(JSON.stringify(cloud));D.rules=RS;save()}refresh()})}
+ function start(){if(watching||!window.LLAuth||!LLAuth.watchRules)return;watching=true;LLAuth.watchRules(function(sections){ready=true;cloud=sections?sections.map(function(r){return[r.title,r.text]}):null;if(cloud){RS=cloud.map(function(r){return[projectName(r[0]),projectName(r[1])]});D.rules=RS;save()}refresh()})}
  window.addEventListener('ll:auth-state',start);setTimeout(start,0);
  async function persist(next){if(!isMaster()||!ready)throw Error('Дождитесь подключения правил к общей базе.');await LLAuth.saveRules(next,cloud);cloud=JSON.parse(JSON.stringify(next));RS=next;D.rules=RS;save();refresh()}
  document.getElementById('adm').addEventListener('click',function(ev){var el=ev.target.closest('[data-act]');if(!el||!isMaster()||at!=='Правила')return;var action=el.dataset.act;if(!['rsave','rnew','rdel'].includes(action))return;ev.preventDefault();ev.stopImmediatePropagation();

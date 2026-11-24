@@ -1,4 +1,4 @@
-# Last Light — карта выживших
+# Divide et Impera I Последний рассвет — карта выживших
 
 Публичный сайт: https://hikikamoris.github.io/last-light-map/
 

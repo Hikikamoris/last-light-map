@@ -1,5 +1,5 @@
 {
-  "name": "last-light-audit-functions",
+  "name": "divide-et-impera-audit-functions",
   "private": true,
   "engines": { "node": "22" },
   "main": "index.js",
