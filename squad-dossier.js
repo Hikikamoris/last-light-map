@@ -65,6 +65,8 @@
   if(sub==='Бойцы')sub='Персонал';if(sub==='Журнал')sub='Хроника';
   var legacy=LEGACY.indexOf(sub)>=0,active=legacy?'Развитие':sub;
   if(sub==='Развитие'){sub='Поселения';legacy=true;active='Развитие'}
+  var developed=legacy&&window.LLDevelopment?LLDevelopment.render(s,sub):null;
+  if(developed!==null&&developed!==false){document.getElementById('state').classList.remove('ds');document.getElementById('state').innerHTML='<div class="ds">'+hero(s)+tabs(active)+'<div class="ds-filters">'+LEGACY.map(function(t){return '<button data-s="'+t+'" class="'+(sub===t?'on':'')+'">'+t+'</button>'}).join('')+'</div>'+developed+'</div>';return}
   if(sub==='Приказы'||legacy){
    BASE();var box=document.getElementById('state'),old=box.querySelector('.tabs');if(!old)return;
    if(legacy){old.outerHTML=tabs(active)+'<div class="ds-filters">'+LEGACY.map(function(t){return '<button data-s="'+t+'" class="'+(sub===t?'on':'')+'">'+t+'</button>'}).join('')+'</div>';}else old.outerHTML=tabs(active);
@@ -220,6 +222,6 @@
   if(action.indexOf('edit-')===0||action.indexOf('add-')===0)openEdit(action.replace(/^(edit|add)-/,''),i);
  });
  window.addEventListener('ll:auth-state',function(ev){var state=ev.detail||{},role=state.profile&&state.profile.role;if(role!=='master'&&role!=='owner'){if(dialog.open)dialog.close();if(confirmDialog.open)confirmDialog.close()}});
- window.LLSquadDossier={render:render};
+ window.LLSquadDossier={render:render,roster:roster,squad:squad};
  if(location.hash==='#state')render();
 }());

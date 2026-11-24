@@ -251,7 +251,7 @@
       document.getElementById("order-writing-note").textContent = "Загружаем вложение…";
       try {
         for (var file of Array.from(files)) {
-          var media = await window.LLAuth.uploadArticleMedia(file, field.dataset.mediaViewer || "");
+          var media = field.dataset.publicRules ? await window.LLAuth.uploadRuleMedia(file) : await window.LLAuth.uploadArticleMedia(file, field.dataset.mediaViewer || "");
           if (insertion && body.contains(insertion.commonAncestorContainer)) selection = insertion;
           focusSelection();
           var tag = media.mime.startsWith("image/") ? "img" : media.mime.startsWith("video/") ? "video" : "audio";
@@ -391,6 +391,5 @@
     }, false, true);
     if (order && ["Принято", "Отклонено"].includes(order.status)) document.getElementById("verdict-decision").value = order.status;
   });
-  window.LLArticles = { render: render, mount: mount, edit: edit, parse: parse };
+  window.LLArticles = { render: render, mount: mount, edit: edit, parse: parse, open: openEditor };
 }());
-

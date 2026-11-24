@@ -318,6 +318,23 @@ const api = {
       return true;
     });
   },
+  watchRules(callback) {
+    if (!db) throw new Error("Общая база ещё подключается.");
+    return onSnapshot(doc(db,"public","gameRules"), snap => callback(snap.exists() ? snap.data().sections : null));
+  },
+  async saveRules(sections, expected) {
+    if (!db || !["master","owner"].includes(state.profile?.role)) throw new Error("Правила изменяет только мастер.");
+    if (!Array.isArray(sections) || !sections.length || sections.length>100 || sections.some(r => !Array.isArray(r) || r.length!==2 || r.some(v => typeof v!=="string")) || new Blob([JSON.stringify(sections)]).size>500000) throw new Error("Неверный формат или слишком большой объём правил.");
+    const ref=doc(db,"public","gameRules");
+    return runTransaction(db, async tx => {const snap=await tx.get(ref);const current=snap.exists()?snap.data().sections.map(r=>[r.title,r.text]):null;if(JSON.stringify(current)!==JSON.stringify(expected))throw new Error("Правила уже изменил другой мастер. Обновите раздел и повторите.");tx.set(ref,{sections:sections.map(r=>({title:r[0],text:r[1]})),updatedBy:state.user.uid,updatedAt:serverTimestamp()});});
+  },
+  async uploadRuleMedia(file) {
+    if (!db || !["master","owner"].includes(state.profile?.role)) throw new Error("Вложения правил добавляет мастер.");
+    if (!/^(image\/(jpeg|png|webp|gif)|video\/(mp4|webm|ogg|quicktime)|audio\/(mpeg|mp3|mp4|ogg|wav|x-wav|webm|aac|flac))$/.test(file.type) || !file.size || file.size>12582912) throw new Error("Выберите медиафайл до 12 МБ.");
+    const bytes=new Uint8Array(await file.arrayBuffer());let raw="";for(let i=0;i<bytes.length;i+=8192)raw+=String.fromCharCode(...bytes.subarray(i,i+8192));const data=btoa(raw),id="rulemedia"+doc(collection(db,"public")).id,count=Math.ceil(data.length/400000);
+    for(let i=0;i<count;i++)await setDoc(doc(db,"public",id+"chunk"+i),{data:data.slice(i*400000,(i+1)*400000)});
+    await setDoc(doc(db,"public",id),{kind:"ruleMedia",mime:file.type,count,ready:true});return{id,mime:file.type};
+  },
   async updateSquadDossier(squadId, patch, expected) {
     if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) throw new Error("Изменять статистику может только мастер.");
     const keys = Object.keys(patch || {});
@@ -474,6 +491,8 @@ const api = {
     }
   },
   async readArticleMedia(id) {
+    if (/^rulemedia[a-zA-Z0-9]{20}$/.test(id)) {if(!db)throw new Error("Общая база подключается.");const snap=await getDoc(doc(db,"public",id));const m=snap.exists()?snap.data():null;if(!m||m.kind!=="ruleMedia"||!m.ready||m.count<1||m.count>48)throw new Error("Вложение недоступно.");const chunks=await Promise.all(Array.from({length:m.count},(_,i)=>getDoc(doc(db,"public",id+"chunk"+i))));const text=chunks.map(c=>c.data().data).join("");return new Blob([Uint8Array.from(atob(text),c=>c.charCodeAt(0))],{type:m.mime});}
+
     if (!db || !state.user) throw new Error("Войдите, чтобы открыть вложение.");
     const snap = await getDoc(doc(db, "orderMedia", id));
     if (!snap.exists() || !snap.data().ready) throw new Error("Вложение недоступно.");
