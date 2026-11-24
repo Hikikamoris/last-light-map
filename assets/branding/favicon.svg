@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Divide et Impera Последний рассвет</title>
+  <rect width="64" height="64" rx="12" fill="#11150e"/>
+  <g fill="#dfbd50">
+    <path d="M31 6h2l1 12h-4zM12 15l9 10-3 2zM52 15l-6 12-3-2zM4 32l13 5-1 3zM60 32l-12 8-1-3z"/>
+    <path d="M31 23a21 21 0 0 0-20 21h20z"/>
+    <path d="M6 47h52v3H6zM6 54h52v3H6z"/>
+  </g>
+  <path d="M33 23a21 21 0 0 1 20 21H33z" fill="#efe0b2"/>
+</svg>
