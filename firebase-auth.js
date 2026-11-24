@@ -335,6 +335,35 @@ const api = {
     for(let i=0;i<count;i++)await setDoc(doc(db,"public",id+"chunk"+i),{data:data.slice(i*400000,(i+1)*400000)});
     await setDoc(doc(db,"public",id),{kind:"ruleMedia",mime:file.type,count,ready:true});return{id,mime:file.type};
   },
+  async manageSquad(input, expected, create = false) {
+    if (!db || !state.user || !["master","owner"].includes(state.profile?.role)) throw new Error("Управлять отрядами может только мастер.");
+    const n=String(input?.n||"").trim(),l=String(input?.l||"").trim(),c=String(input?.c||""),id=input?.id;
+    if (!n || n.length>100 || l.length>100 || !/^#[0-9a-f]{6}$/i.test(c) || !id || String(id).length>100) throw new Error("Укажите название и корректный цвет отряда.");
+    for(const [key,min,max] of [["x",-10000,10000],["y",-10000,10000],["territoryRadius",1,10000],["lvl",1,1000]]) if(!Number.isFinite(input[key])||input[key]<min||input[key]>max)throw new Error("Проверьте координаты, радиус и уровень отряда.");
+    const nextOwner=String(input.playerUid||"");
+    const oldOwner=String(expected?.ownerUid||"");
+    if(nextOwner && nextOwner!==oldOwner){const users=await getDocs(collection(db,"users"));const user=users.docs.find(d=>d.id===nextOwner);if(!user||user.data().role!=="player")throw new Error("Выберите аккаунт игрока.");}
+    const ref=doc(db,"public","world"),master=state.user.uid;
+    return runTransaction(db,async tx=>{
+      const snap=await tx.get(ref),world=snap.exists()?snap.data():null;if(!Array.isArray(world?.squads))throw new Error("Сначала опубликуйте общую карту в панели мастера.");
+      const squads=world.squads.slice(),index=squads.findIndex(s=>String(s.id)===String(id));
+      if(create&&index>=0)throw new Error("Этот отряд уже существует. Закройте форму и повторите создание.");
+      if(!create&&index<0)throw new Error("Отряд больше не существует.");
+      const current=create?null:squads[index],fields=["n","l","c","x","y","territoryRadius","set","lvl","ownerUid"];
+      if(current&&fields.some(k=>(current[k]??null)!==(expected?.[k]??null)))throw new Error("Настройки уже изменил другой мастер. Откройте форму заново.");
+      if(nextOwner&&squads.some(s=>String(s.id)!==String(id)&&s.ownerUid===nextOwner))throw new Error("У этого игрока уже есть отряд.");
+      let app=null,appRef=null;
+      if(nextOwner&&nextOwner!==oldOwner){appRef=doc(db,"applications",nextOwner);const appSnap=await tx.get(appRef);app=appSnap.exists()?appSnap.data():null;if(app?.applicantUid!==nextOwner||!["pending","approved"].includes(app.status))throw new Error("У игрока нет доступной заявки. Сначала он должен подать заявку.");}
+      const updated={...(current||{id,reg:"approved",mem:[],dossier:{rosterManaged:true},r:{f:0,food:0,water:0,ammo:0,mats:0,meds:0},b:{},mor:70}),n,l,c,x:input.x,y:input.y,territoryRadius:input.territoryRadius,set:!!input.set,lvl:Math.floor(input.lvl),statsRevision:Number(current?.statsRevision||0)+1,npc:nextOwner?0:1};
+      if(nextOwner)updated.ownerUid=nextOwner;else delete updated.ownerUid;
+      if(create)squads.push(updated);else squads[index]=updated;
+      if(new Blob([JSON.stringify({...world,squads})]).size>850000)throw new Error("Общая база заполнена. Сократите старые описания.");
+      tx.update(ref,{squads,updatedBy:master,updatedAt:serverTimestamp()});
+      if(oldOwner&&oldOwner!==nextOwner){const other=squads.find(s=>s.ownerUid===oldOwner);tx.update(doc(db,"users",oldOwner),{status:other?"active":"visitor",squadId:other?String(other.id):"",updatedBy:master,updatedAt:serverTimestamp()});}
+      if(app){tx.update(appRef,{status:"approved",decisionReason:"",reviewedBy:master,reviewedAt:serverTimestamp(),updatedAt:serverTimestamp()});tx.update(doc(db,"users",nextOwner),{status:"active",squadId:String(id),updatedBy:master,updatedAt:serverTimestamp()});}
+      return updated;
+    });
+  },
   async updateSquadDossier(squadId, patch, expected) {
     if (!db || !state.user || !["master", "owner"].includes(state.profile?.role)) throw new Error("Изменять статистику может только мастер.");
     const keys = Object.keys(patch || {});
@@ -649,7 +678,7 @@ const api = {
         throw new Error("Заявка больше не доступна для назначения.");
       }
       const world = (await transaction.get(worldRef)).data();
-      if (!Array.isArray(world?.squads)) throw new Error("Сначала опубликуйте общую карту во вкладке «Отряды».");
+      if (!Array.isArray(world?.squads)) throw new Error("Сначала опубликуйте общую карту в панели мастера.");
       const squads = world.squads.slice();
       if (squads.some((squad) => squad?.ownerUid === uid)) {
         throw new Error("У этого игрока уже есть отряд. Обновите список заявок.");
@@ -725,7 +754,7 @@ const api = {
       }
       const world = (await transaction.get(doc(db, "public", "world"))).data();
       if (Array.isArray(world?.squads) && world.squads.some((squad) => squad?.ownerUid === uid)) {
-        throw new Error("За игроком уже закреплён отряд. Сначала снимите привязку во вкладке «Отряды».");
+        throw new Error("За игроком уже закреплён отряд. Сначала снимите привязку в панели мастера.");
       }
       transaction.update(appRef, {
         status: "rejected", decisionReason, reviewedBy: masterUid,

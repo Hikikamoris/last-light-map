@@ -171,7 +171,8 @@ nav a,.tabs button{font-size:13px}.st{font-size:11px}button.pr:hover{filter:brig
  .post{padding:14px}.rx button{min-height:40px}
 }
 @media(max-width:420px){.logo{font-size:15px}.etop h2{font-size:14px}.etop .save-status{white-space:normal;max-width:100%}.wrap{padding:10px}.card{padding:12px}}
-</style><link rel="stylesheet" href="./mobile.css?v=20261122-editor-sync1"><link rel="stylesheet" href="./order-articles.css?v=20261120-map-detail1"><link rel="stylesheet" href="./atmosphere.css?v=20261120-map-detail1"><link rel="stylesheet" href="./mobile-navigation.css?v=20261122-mobile-menu1"><link rel="stylesheet" href="./squad-dossier.css?v=20261122-dossier1"><link rel="stylesheet" href="./character-equipment.css?v=20261124-development1"><link rel="stylesheet" href="./squad-development.css?v=20261124-development1">
+</style><link rel="stylesheet" href="./mobile.css?v=20261122-editor-sync1"><link rel="stylesheet" href="./order-articles.css?v=20261120-map-detail1"><link rel="stylesheet" href="./atmosphere.css?v=20261120-map-detail1"><link rel="stylesheet" href="./mobile-navigation.css?v=20261122-mobile-menu1"><link rel="stylesheet" href="./squad-dossier.css?v=20261122-dossier1"><link rel="stylesheet" href="./character-equipment.css?v=20261125-settings1"><link rel="stylesheet" href="./squad-development.css?v=20261125-settings1">
+<link rel="stylesheet" href="./squad-settings.css?v=20261125-settings1">
 </head><body>
 <header>
  <div class="logo"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v3M14 3v3M7 9a5 5 0 0110 0v8H7zM9 21h6M12 11v4"/></svg><span>Last <b>Light</b></span></div>
@@ -415,68 +416,20 @@ $('prof').onclick=function(){var p=$('pop'),s=me(),u=LLAuthState.user,app=LLAuth
  if($('nt'))$('nt').onclick=async function(){var b=$('nt');b.disabled=true;try{var g=await window.LLAuth.advanceGameClock(legacyGameClock());GAME_CLOCK=g;D.turn=g.turn;D.gameDate={year:g.year,month:g.month,day:g.day};D.squads.forEach(function(q){if(q.npc)return;var i=inc(q);q.r.food=Math.max(0,q.r.food+i.food);q.r.water=Math.max(0,q.r.water+i.water);q.r.mats+=i.mats;if(q.r.food===0||q.r.water===0)q.mor=Math.max(0,q.mor-10)});D.log.unshift('Ход '+D.turn+' начался.');save();clock();p.classList.remove('on');go()}catch(e){authMessage(e)}finally{if(b.isConnected)b.disabled=false}};
  $('rst').onclick=function(){if(confirm('Удалить все данные в этом браузере?')){try{localStorage.removeItem('lastlight');localStorage.removeItem(MAP_DRAFT_KEY)}catch(e){storageError(e);return}location.reload()}}};
 // окно мастера
-var at='Отряды',ar=0;
+var at='Заявки',ar=0;
 var PF=[['r.f','Бойцы'],['r.food','Еда'],['r.water','Вода'],['r.ammo','Патроны'],['r.mats','Материалы'],['r.meds','Медикаменты'],['mor','Мораль'],['lvl','Уровень общины'],['b.farm','Фермы'],['b.well','Колодцы'],['b.shop','Мастерские'],['b.wall','Стены'],['x','X на карте'],['y','Y на карте'],['territoryRadius','Радиус территории']];
 var DL=[['f','Бойцы'],['food','Еда'],['water','Вода'],['ammo','Патроны'],['mats','Материалы'],['meds','Медикаменты'],['mor','Мораль']];
 function ens(q){q.r=q.r||{f:5,food:20,water:20,ammo:30,mats:10,meds:3};q.b=q.b||{};if(q.mor==null)q.mor=70;q.lvl=q.lvl||1;if(!Number.isFinite(Number(q.territoryRadius))||Number(q.territoryRadius)<=0)q.territoryRadius=145}
 function gv(o,p){return p.split('.').reduce(function(a,k){return a==null?a:a[k]},o)}
 function sv2(o,p,v){var k=p.split('.'),l=k.pop();k.forEach(function(x){o=o[x]});o[l]=v}
 function lab(f,l,v,t){return'<label style="color:var(--mu);font-size:12px">'+l+'<input data-f="'+f+'" '+(t?'type="number" ':'')+'value="'+esc(v==null?0:v)+'" style="width:100%;margin-top:3px"></label>'}
-function rAdm(){if(!isMaster())return;var admTabs=['Отряды','Заявки','Вердикты','Правила','Игроки'];if(LLAuthState.profile&&LLAuthState.profile.role==='owner')admTabs.push('Доступ');var h='<div class="eb">Окно мастера</div><h1>Управление проектом</h1><div class="tabs">'+admTabs.map(function(t){return'<button data-at="'+t+'" class="'+(t===at?'on':'')+'">'+t+bg(t)+'</button>'}).join('')+'</div>';
- if(at==='Отряды'){h+='<button class="pr" data-act="new">+ Новый отряд</button>';
-   D.squads.forEach(function(q){ens(q);h+='<div class="card" style="margin-top:12px" data-q="'+q.id+'"><div class="grid">'+lab('n','Название',q.n)+lab('l','Глава',q.l)+'<label style="color:var(--mu);font-size:12px">Цвет<input data-f="c" type="color" value="'+q.c+'" style="width:100%;height:36px;padding:2px;margin-top:3px"></label><label style="display:flex;align-items:center;gap:8px;cursor:pointer;grid-column:1/-1"><input data-f="set" type="checkbox" '+(q.set?'checked':'')+' style="width:auto"> Поселения открыты</label>'+PF.map(function(p){return lab(p[0],p[1],gv(q,p[0]),1)}).join('')+'</div><small style="display:block;color:var(--mu);margin-top:8px">Пока к отряду не привязан нарисованный контур, карта показывает ориентировочную круглую территорию.</small><div style="margin-top:10px"><button class="pr" data-act="save" data-id="'+q.id+'">Сохранить</button> <button data-act="del" data-id="'+q.id+'">Удалить отряд</button></div></div>'})}
- else if(at==='Заявки'){h+='<div class="card" style="max-width:760px;margin:12px 0"><h3>Заявки на отряд</h3><p style="color:var(--mu);margin:6px 0 10px">Прочитайте описания персонажей, задайте параметры отряда и закрепите его за игроком.</p><div id="cloud-applications" style="color:var(--mu)">Загружаю заявки…</div></div>'}else if(at==='Вердикты'){h+='<div class="card master-orders-panel" style="margin:12px 0"><div id="cloud-verdicts">Загружаю приказы…</div></div>'}else if(at==='Игроки'){h+='<div class="card" style="max-width:900px;margin-top:12px"><h3>Имена для мастеров</h3><p style="color:var(--mu)">Эти пометки видны только мастерам. Игроки увидят только обычное имя аккаунта или игровой позывной.</p><div id="master-players">Загружаю список игроков…</div></div>'}else if(at==='Доступ'&&LLAuthState.profile&&LLAuthState.profile.role==='owner'){h+='<div class="card" style="max-width:850px;margin-top:12px"><h3>Роли аккаунтов</h3><p style="color:var(--mu)">Новые аккаунты по умолчанию получают роль игрока. Назначать мастеров может только создатель проекта.</p><div id="cloud-users">Загружаю аккаунты…</div></div>'}else if(at==='_'){h+='<div class="card" style="max-width:700px"><h3 style="margin-bottom:6px">Вердикт от лица проекта</h3><div style="color:var(--mu);margin-bottom:10px">Публикуется на «Стене» от имени «Мастера проекта». Изменения показателей применяются сразу.</div><select id="vq" style="width:100%;margin-bottom:8px"><option value="0">Всем (показатели не меняются)</option>'+D.squads.map(function(q){return'<option value="'+q.id+'">'+esc(q.n)+'</option>'}).join('')+'</select><textarea id="vt" rows="4" style="width:100%;margin-bottom:8px" placeholder="Текст вердикта…"></textarea><div class="eb" style="margin-bottom:6px">Изменения (+ / −)</div><div class="grid">'+DL.map(function(d){return lab('d.'+d[0],d[1],0,1)}).join('')+'</div><button class="pr" data-act="verd" style="margin-top:10px">Опубликовать вердикт</button></div>'}
+function rAdm(){if(!isMaster())return;var admTabs=['Заявки','Вердикты','Правила','Игроки'];if(LLAuthState.profile&&LLAuthState.profile.role==='owner')admTabs.push('Доступ');if(at==='Отряды')at='Заявки';var h='<div class="eb">Окно мастера</div><h1>Управление проектом</h1><div class="tabs">'+admTabs.map(function(t){return'<button data-at="'+t+'" class="'+(t===at?'on':'')+'">'+t+bg(t)+'</button>'}).join('')+'</div>';
+ if(at==='Заявки'){h+='<div class="card" style="max-width:760px;margin:12px 0"><h3>Заявки на отряд</h3><p style="color:var(--mu);margin:6px 0 10px">Прочитайте описания персонажей, задайте параметры отряда и закрепите его за игроком.</p><div id="cloud-applications" style="color:var(--mu)">Загружаю заявки…</div></div>'}else if(at==='Вердикты'){h+='<div class="card master-orders-panel" style="margin:12px 0"><div id="cloud-verdicts">Загружаю приказы…</div></div>'}else if(at==='Игроки'){h+='<div class="card" style="max-width:900px;margin-top:12px"><h3>Имена для мастеров</h3><p style="color:var(--mu)">Эти пометки видны только мастерам. Игроки увидят только обычное имя аккаунта или игровой позывной.</p><div id="master-players">Загружаю список игроков…</div></div>'}else if(at==='Доступ'&&LLAuthState.profile&&LLAuthState.profile.role==='owner'){h+='<div class="card" style="max-width:850px;margin-top:12px"><h3>Роли аккаунтов</h3><p style="color:var(--mu)">Новые аккаунты по умолчанию получают роль игрока. Назначать мастеров может только создатель проекта.</p><div id="cloud-users">Загружаю аккаунты…</div></div>'}else if(at==='_'){h+='<div class="card" style="max-width:700px"><h3 style="margin-bottom:6px">Вердикт от лица проекта</h3><div style="color:var(--mu);margin-bottom:10px">Публикуется на «Стене» от имени «Мастера проекта». Изменения показателей применяются сразу.</div><select id="vq" style="width:100%;margin-bottom:8px"><option value="0">Всем (показатели не меняются)</option>'+D.squads.map(function(q){return'<option value="'+q.id+'">'+esc(q.n)+'</option>'}).join('')+'</select><textarea id="vt" rows="4" style="width:100%;margin-bottom:8px" placeholder="Текст вердикта…"></textarea><div class="eb" style="margin-bottom:6px">Изменения (+ / −)</div><div class="grid">'+DL.map(function(d){return lab('d.'+d[0],d[1],0,1)}).join('')+'</div><button class="pr" data-act="verd" style="margin-top:10px">Опубликовать вердикт</button></div>'}
  else{if(ar>=RS.length)ar=0;h+='<div class="side"><div class="card">'+RS.map(function(r,i){return'<a data-ar="'+i+'" class="'+(i===ar?'on':'')+'">'+esc(r[0])+'</a>'}).join('')+'<button class="pr" data-act="rnew" style="width:100%;margin-top:8px">+ Новый раздел</button></div><div class="card" style="flex:1"><input id="rt" value="'+esc(RS[ar][0])+'" style="width:100%;margin-bottom:8px"><textarea id="rx" rows="12" style="width:100%">'+esc(RS[ar][1])+'</textarea><div style="margin-top:8px"><button class="pr" data-act="rsave">Сохранить раздел</button> <button data-act="rdel">Удалить раздел</button></div></div></div>'}
  $('adm').innerHTML=h;if(at==='Заявки')loadCloudApplications();if(at==='Вердикты')renderCloudVerdicts();if(at==='Доступ')loadCloudUsers()}
 var rAdmWithoutWorldSyncPanel=rAdm;
-function drawWorldSyncPanel(){if(!isMaster()||at!=='Отряды')return;var role=LLAuthState.profile&&LLAuthState.profile.role,html='<div class="card" style="max-width:850px;margin:10px 0 12px;border-color:#756536">';if(!worldSyncReady)html+='<b>Общая карта</b><p style="color:var(--mu);margin:6px 0 0">Подключаю общую базу…</p>';else if(!worldCloudExists&&role==='owner')html+='<b>Общая карта ещё не создана</b><p style="color:var(--mu);margin:6px 0 10px">Сейчас отряды и зоны сохранены только в этом браузере. Нажмите один раз, чтобы сделать эту версию общей для всех.</p><button class="pr" data-world-sync="init">Опубликовать текущие отряды и карту</button>';else if(!worldCloudExists)html+='<b>Ожидается первая общая публикация</b><p style="color:var(--mu);margin:6px 0 0">Создатель проекта должен один раз опубликовать текущие отряды и карту. После этого сохранения мастеров будут видны всем.</p>';else html+='<b>Общая версия активна</b><p style="color:var(--mu);margin:6px 0 0">Изменения отрядов и редактора карты сохраняются для всех игроков.</p>';if(worldLocalBackupAvailable)html+='<button style="margin-top:8px" data-world-sync="backup">Скачать прежнюю локальную копию</button>';html+='</div>';var tabs=$('adm').querySelector('.tabs');if(tabs)tabs.insertAdjacentHTML('afterend',html)}
-rAdm=function(){rAdmWithoutWorldSyncPanel();drawWorldSyncPanel();loadSquadAssignments()};
-function loadSquadAssignments(){
- if(!isMaster()||at!=='Отряды')return;
- var entries=[];
- D.squads.forEach(function(squad){
-  var card=Array.from($('adm').querySelectorAll('[data-q]')).find(function(el){
-   return el.getAttribute('data-q')===String(squad.id);
-  });
-  if(!card)return;
-  var box=document.createElement('div');
-  box.style.cssText='border-bottom:1px solid var(--bd);padding-bottom:12px;margin-bottom:12px;overflow-wrap:anywhere';
-  box.textContent=squad.ownerUid?'Закреплённый игрок · загружаем аккаунт…':'Игрок не закреплён';
-  card.prepend(box);
-  if(squad.ownerUid)entries.push({squad:squad,box:box});
- });
- if(!entries.length||!window.LLAuth)return;
- Promise.all([
-  window.LLAuth.listUsers(),
-  window.LLAuth.listMasterNotes().catch(function(){return []})
- ]).then(function(results){
-  var users=new Map(results[0].map(function(user){return [user.id,user]}));
-  var notes=new Map(results[1].map(function(note){return [note.uid,note.alias]}));
-  entries.forEach(function(entry){
-   if(!entry.box.isConnected||!isMaster())return;
-   var squad=entry.squad,user=users.get(squad.ownerUid),alias=notes.get(squad.ownerUid);
-   var name=alias||(user&&user.displayName)||squad.ownerUid;
-   var account=user&&(user.email||user.displayName)||squad.ownerUid;
-   entry.box.innerHTML='<b>Закреплённый игрок · '+esc(name)+'</b>'+
-    (account!==name?'<small style="display:block;color:var(--mu);margin-top:4px">'+esc(account)+'</small>':'')+
-    '<button type="button" style="margin-top:8px">Снять игрока с главы отряда</button>';
-   entry.box.querySelector('button').onclick=async function(){
-    if(!confirm('Снять игрока «'+name+'» с отряда «'+squad.n+'»? Отряд сохранится, а игрок будет ожидать нового назначения.'))return;
-    this.disabled=true;
-    try{
-     await window.LLAuth.unassignSquad(squad.id,squad.ownerUid);
-     toast('Игрок снят с отряда. Назначить его снова можно во вкладке «Заявки».','ok');
-    }catch(error){authMessage(error)}
-    finally{if(this.isConnected)this.disabled=false}
-   };
-  });
- }).catch(function(error){
-  entries.forEach(function(entry){
-   if(entry.box.isConnected)entry.box.textContent='Закреплённый аккаунт · '+entry.squad.ownerUid;
-  });
-  authMessage(error);
- });
-}
+function drawWorldSyncPanel(){if(!isMaster()||worldCloudExists&&!worldLocalBackupAvailable)return;var role=LLAuthState.profile&&LLAuthState.profile.role,html='<div class="card" style="max-width:850px;margin:10px 0 12px;border-color:#756536">';if(!worldSyncReady)html+='<b>Общая карта</b><p style="color:var(--mu);margin:6px 0 0">Подключаю общую базу…</p>';else if(!worldCloudExists&&role==='owner')html+='<b>Общая карта ещё не создана</b><p style="color:var(--mu);margin:6px 0 10px">Сейчас отряды и зоны сохранены только в этом браузере. Нажмите один раз, чтобы сделать эту версию общей для всех.</p><button class="pr" data-world-sync="init">Опубликовать текущие отряды и карту</button>';else if(!worldCloudExists)html+='<b>Ожидается первая общая публикация</b><p style="color:var(--mu);margin:6px 0 0">Создатель проекта должен один раз опубликовать текущие отряды и карту. После этого сохранения мастеров будут видны всем.</p>';else html+='<b>Общая версия активна</b><p style="color:var(--mu);margin:6px 0 0">Изменения отрядов и редактора карты сохраняются для всех игроков.</p>';if(worldLocalBackupAvailable)html+='<button style="margin-top:8px" data-world-sync="backup">Скачать прежнюю локальную копию</button>';html+='</div>';var tabs=$('adm').querySelector('.tabs');if(tabs)tabs.insertAdjacentHTML('afterend',html)}
+rAdm=function(){rAdmWithoutWorldSyncPanel();drawWorldSyncPanel()};
 function downloadPreSharedWorldBackup(){try{var raw=localStorage.getItem('lastlight_before_shared_world');if(!raw){toast('Локальной копии до общей синхронизации нет.','error');return}var a=document.createElement('a'),url=URL.createObjectURL(new Blob([raw],{type:'application/json'}));a.href=url;a.download='lastlight-before-shared-sync.json';a.click();setTimeout(function(){URL.revokeObjectURL(url)},1200);toast('Прежняя локальная копия скачана.','ok')}catch(e){toast('Не удалось скачать локальную копию.','error')}}
 function applicationRosterMarkup(members){
  return (Array.isArray(members)?members:[]).filter(Boolean).map(function(member,i){
@@ -509,7 +462,7 @@ function loadCloudApplications(){
     '<small>'+esc(name)+(name===account?'':' · '+esc(account))+'</small></div>'+
     '<span class="st">'+(pending?'На рассмотрении':'Ожидает привязки')+'</span></div>'+
     '<details><summary>Описания персонажей</summary>'+applicationRosterMarkup(application.members)+'</details>'+
-    (!worldAvailable?'<p>Сначала опубликуйте общую карту во вкладке «Отряды».</p>':'')+
+    (!worldAvailable?'<p>Сначала опубликуйте общую карту в панели мастера.</p>':'')+
     '<div class="application-actions"><button type="button" class="pr" data-app-action="create" data-app-index="'+index+'"'+(!worldAvailable?' disabled':'')+'>Создать отряд</button>'+
     (unassigned&&worldAvailable?'<button type="button" data-app-action="attach" data-app-index="'+index+'">Прикрепить существующий</button>':'')+
     '<button type="button" data-app-action="reject" data-app-index="'+index+'">Отклонить</button></div></article>';
@@ -615,10 +568,7 @@ $('adm').addEventListener('click',function(e){var t=e.target,a=t.getAttribute('d
  if(t.getAttribute('data-at')){at=t.getAttribute('data-at');rAdm();return}
  if(t.getAttribute('data-ar')!==null){ar=+t.getAttribute('data-ar');rAdm();return}
  if(!a)return;
- if(a==='new'){q={id:Date.now(),n:'Новый отряд',l:'—',c:COLORS[D.squads.length%COLORS.length],x:700,y:450,npc:1};ens(q);D.squads.push(q)}
- else if(a==='save'){var c=document.querySelector('[data-q="'+id+'"]');q=D.squads.filter(function(s){return s.id===id})[0];ens(q);Array.prototype.forEach.call(c.querySelectorAll('[data-f]'),function(i){sv2(q,i.getAttribute('data-f'),i.type==='checkbox'?i.checked:(i.type==='number'?(Number(i.value)||0):i.value))})}
- else if(a==='del'){if(!confirm('Удалить отряд?'))return;D.squads=D.squads.filter(function(s){return s.id!==id});if(D.me===id)D.me=null}
- else if(a==='verd'){var tx=$('vt').value.trim();if(!tx){alert('Введите текст вердикта');return}var qid=+$('vq').value,sm=[];q=D.squads.filter(function(s){return s.id===qid})[0];
+ if(a==='verd'){var tx=$('vt').value.trim();if(!tx){alert('Введите текст вердикта');return}var qid=+$('vq').value,sm=[];q=D.squads.filter(function(s){return s.id===qid})[0];
   if(q){ens(q);DL.forEach(function(d){var n=Number(document.querySelector('[data-f="d.'+d[0]+'"]').value)||0;if(!n)return;if(d[0]==='mor')q.mor=Math.min(100,Math.max(0,q.mor+n));else q.r[d[0]]=Math.max(0,q.r[d[0]]+n);sm.push(d[1]+' '+(n>0?'+':'')+n)})}
   D.posts.unshift({a:'Мастер проекта',t:tx+(sm.length?' ('+sm.join(', ')+')':''),s:'Событие',kind:'event',to:qid,v:'',ts:'Ход '+D.turn,dt:new Date().toLocaleString('ru-RU')});
   if(q)D.log.unshift('Ход '+D.turn+': событие — '+tx)}
@@ -637,7 +587,7 @@ $('adm').addEventListener('click',function(e){var t=e.target,a=t.getAttribute('d
   save();drawMap();drawFeat();drawLeg();rAdm()});
 $('adm').addEventListener('change',function(e){var uid=e.target.getAttribute('data-cloud-role');if(!uid)return;if(!confirm('Изменить роль этого аккаунта?')){loadCloudUsers();return}window.LLAuth.setUserRole(uid,e.target.value).then(loadCloudUsers).catch(authMessage)});
 $('adm').addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-world-sync]');if(!t)return;e.preventDefault();e.stopImmediatePropagation();if(t.getAttribute('data-world-sync')==='backup'){downloadPreSharedWorldBackup();return}t.disabled=true;publishCurrentWorld().then(function(ok){if(ok){drawMap();drawFeat();drawLeg();rAdm()}}).finally(function(){if(t.isConnected)t.disabled=false})},true);
-$('adm').addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-act]');if(!t)return;var a=t.getAttribute('data-act');if(['new','save','del','verd','ov','aSave','aOk','aNo','aAdd','aDel'].indexOf(a)>=0)saveSharedWorldAfterAdmin()});
+$('adm').addEventListener('click',function(e){var t=e.target.closest&&e.target.closest('[data-act]');if(!t)return;var a=t.getAttribute('data-act');if(['verd','ov','aSave','aOk','aNo','aAdd','aDel'].indexOf(a)>=0)saveSharedWorldAfterAdmin()});
 // карточки постов в стиле Fauxlore
 var EXP={},CMO={},WALL_DRAFT_PREFIX='lastlight_wall_draft_v1:';
 function wallDraftKey(kind,id){var owner=LLAuthState&&LLAuthState.user&&LLAuthState.user.uid||'guest';return WALL_DRAFT_PREFIX+encodeURIComponent(owner)+':'+encodeURIComponent(kind||'text')+':'+encodeURIComponent(id||'main')}
@@ -1001,6 +951,6 @@ document.addEventListener('keydown',function(e){if(location.hash!=='#editor'||!E
 drawFeat();
 L.control.zoom({position:'bottomright',zoomInTitle:'Приблизить',zoomOutTitle:'Отдалить'}).addTo(map);
 clock();drawMap();drawLeg();go();
-</script><script src="./order-tables.js?v=20261120-map-detail1"></script><script src="./order-articles.js?v=20261124-development1-20261120-map-detail1"></script><script src="./rp-social.js?v=20261120-map-detail1"></script><script src="./squad-orders.js?v=20261120-map-detail1"></script><script src="./atmosphere.js?v=20261120-map-detail1"></script><script src="./character-equipment.js?v=20261124-development1"></script><script src="./squad-dossier.js?v=20261124-development1"></script><script src="./squad-development.js?v=20261124-development1"></script>
-<script src="./rules-editor.js?v=20261124-development1"></script>
-<script type="module" src="./firebase-auth.js?v=20261124-development1"></script><script src="./mobile-navigation.js?v=20261122-mobile-menu1"></script></body></html>
+</script><script src="./order-tables.js?v=20261120-map-detail1"></script><script src="./order-articles.js?v=20261125-settings1-20261120-map-detail1"></script><script src="./rp-social.js?v=20261120-map-detail1"></script><script src="./squad-orders.js?v=20261120-map-detail1"></script><script src="./atmosphere.js?v=20261120-map-detail1"></script><script src="./character-equipment.js?v=20261125-settings1"></script><script src="./squad-dossier.js?v=20261125-settings1"></script><script src="./squad-settings.js?v=20261125-settings1"></script><script src="./squad-development.js?v=20261125-settings1"></script>
+<script src="./rules-editor.js?v=20261125-settings1"></script>
+<script type="module" src="./firebase-auth.js?v=20261125-settings1"></script><script src="./mobile-navigation.js?v=20261122-mobile-menu1"></script></body></html>

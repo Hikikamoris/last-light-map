@@ -2,7 +2,7 @@
  'use strict';
  var TABS=['Приказы','Обзор','Персонал','Склад','Задачи','Транспорт','Хроника','Развитие'];
  var LEGACY=['Поселения','Экономика','Торговля','Дипломатия','Власть','Военное дело','Модификаторы'];
- var BASE=rState,ADMIN=rAdm,memberIndex=null,taskFilter='all',eventFilter='all',selected=null,editor=null;
+ var BASE=rState,memberIndex=null,taskFilter='all',eventFilter='all',selected=null,editor=null;
  var METRICS=[['cohesion','Сплочённость','Доверие и взаимовыручка'],['discipline','Дисциплина','Исполнение приказов'],['fatigue','Усталость','Накопленное утомление',true],['readiness','Боеготовность','Готовность к опасным ситуациям'],['visibility','Заметность','Риск привлечь внимание',true],['living','Условия проживания','Комфорт и безопасность лагеря']];
  var PHYSICAL=[['health','Здоровье'],['fatigue','Усталость',true],['hunger','Голод',true],['thirst','Жажда',true],['stress','Стресс',true]];
  var SKILLS=[['medicine','Медицина'],['shooting','Стрельба'],['survival','Выживание'],['engineering','Инженерия'],['mechanics','Механика'],['social','Общение']];
@@ -28,7 +28,7 @@
  function tabs(active){return '<div class="tabs">'+TABS.map(function(t){return '<button data-s="'+t+'" class="'+(t===active?'on':'')+'">'+t+'</button>'}).join('')+'</div>'}
  function hero(s){
   var d=data(s),members=roster(s),count=members.length||(d.rosterManaged?0:num(s.r&&s.r.f)),cap=num(d.capacity),turn=GAME_CLOCK?GAME_CLOCK.turn:D.turn;
-  return '<div class="ds-hero"><div class="ds-heading"><div><div class="eb">Досье отряда · Last Light</div><h1>'+e(s.n)+'</h1><div class="ds-caption">Ход '+e(turn)+(d.location?' · '+e(d.location):'')+(s.l?'<br>Глава · '+e(s.l):'')+'</div></div><span class="ds-badge '+(s.set?'good':'')+'">'+e(d.status||(s.set?'Лагерь активен':'Отряд в пути'))+'</span></div><div class="ds-tiles"><div class="ds-tile"><strong>'+value(count)+(cap!==null?'/'+cap:'')+'</strong><span>Участники</span></div><div class="ds-tile"><strong>'+value(s.mor)+'</strong><span>Мораль</span></div><div class="ds-tile"><strong>'+value(d.cohesion)+'</strong><span>Сплочённость</span></div></div>'+(isMaster()?'<div class="ds-actions"><select data-ds-select aria-label="Выбрать отряд">'+D.squads.filter(ok).map(function(q){return '<option value="'+e(q.id)+'" '+(String(q.id)===String(s.id)?'selected':'')+'>'+e(q.n)+'</option>'}).join('')+'</select>'+button('Показатели отряда','edit-overview')+'</div>':'')+'</div>';
+  return '<div class="ds-hero"><div class="ds-heading"><div><div class="eb">Досье отряда · Last Light</div><h1>'+e(s.n)+'</h1><div class="ds-caption">Ход '+e(turn)+(d.location?' · '+e(d.location):'')+(s.l?'<br>Глава · '+e(s.l):'')+'</div></div><span class="ds-badge '+(s.set?'good':'')+'">'+e(d.status||(s.set?'Лагерь активен':'Отряд в пути'))+'</span></div><div class="ds-tiles"><div class="ds-tile"><strong>'+value(count)+(cap!==null?'/'+cap:'')+'</strong><span>Участники</span></div><div class="ds-tile"><strong>'+value(s.mor)+'</strong><span>Мораль</span></div><div class="ds-tile"><strong>'+value(d.cohesion)+'</strong><span>Сплочённость</span></div></div>'+(isMaster()?'<div class="ds-actions ds-squad-actions"><select data-ds-select aria-label="Выбрать отряд">'+D.squads.filter(ok).map(function(q){return '<option value="'+e(q.id)+'" '+(String(q.id)===String(s.id)?'selected':'')+'>'+e(q.n)+'</option>'}).join('')+'</select>'+button('Показатели отряда','edit-overview')+'<button type="button" data-squad-settings="edit">Настройки отряда</button><button type="button" class="pr" data-squad-settings="create">Создать отряд</button></div>':'')+'</div>';
  }
  function title(text,action,label){return '<div class="ds-titlebar"><h2>'+e(text)+'</h2>'+(isMaster()&&action?button(label||'Добавить',action):'')+'</div>'}
  function overview(s){var d=data(s);return '<div class="ds-layout"><section class="ds-box">'+title('Состояние отряда')+meter('Мораль',s.mor,'Общее эмоциональное состояние')+METRICS.slice(0,3).map(function(m){return meter(m[1],d[m[0]],m[2],m[3])}).join('')+'</section><section class="ds-box">'+title('Готовность и лагерь')+METRICS.slice(3).map(function(m){return meter(m[1],d[m[0]],m[2],m[3])}).join('')+'<div class="ds-note">Показатели обновляет мастер по результатам действий и вердиктов. Незаполненные значения отмечены прочерком.</div></section></div>'}
@@ -59,7 +59,7 @@
  }
  function chronicle(s){var list=arr(data(s).events).map(function(t,i){return{t:t,i:i}}).sort(function(a,b){return Number(b.t.turn||0)-Number(a.t.turn||0)||b.i-a.i}).filter(function(o){return eventFilter==='all'||o.t.category===eventFilter});return '<section class="ds-box">'+title('Хроника отряда','add-event','Добавить событие')+filters('event-filter',eventFilter,{all:'Все события',personal:'Персональные',squad:'Отряд',story:'Сюжетные'})+(list.length?list.map(function(o){var t=o.t;return '<details><summary><span class="ds-caption">Ход '+e(t.turn||'—')+(t.time?' · '+e(t.time):'')+' · '+e(CATEGORIES[t.category]||CATEGORIES.squad)+'</span><br><b>'+e(t.title)+'</b></summary><div class="ds-detail-text">'+e(t.text||'Подробности не добавлены.')+'</div>'+(isMaster()?'<div class="ds-actions">'+button('Редактировать','edit-event',o.i)+button('Удалить','remove-event',o.i)+'</div>':'')+'</details>'}).join(''):empty('Событий в этой категории пока нет.'))+(arr(D.log).length?'<details style="margin-top:22px"><summary>Прежний журнал проекта</summary><div class="ds-detail-text">'+arr(D.log).map(e).join('<br>')+'</div></details>':'')+'</section>'}
  function render(){
-  var s=squad();if((!isActivePlayer()&&!isMaster())||!ok(s)){document.getElementById('state').classList.remove('ds');BASE();return}
+  var s=squad();if(isMaster()&&!s){document.getElementById('state').innerHTML='<div class="ds"><section class="ds-box"><h1>Отряды</h1><p>Создайте первый отряд, затем добавьте участников и заполните его показатели.</p><button type="button" class="pr" data-squad-settings="create">Создать отряд</button></section></div>';return}if((!isActivePlayer()&&!isMaster())||!ok(s)){document.getElementById('state').classList.remove('ds');BASE();return}
    if(isMaster())D.me=s.id;
   if(sub!=='Приказы'&&window.LLSquadOrders)window.LLSquadOrders.refresh();
   if(sub==='Бойцы')sub='Персонал';if(sub==='Журнал')sub='Хроника';
@@ -78,8 +78,6 @@
   document.getElementById('state').innerHTML='<div class="ds">'+hero(s)+tabs(active)+view+'</div>';
  }
  rState=render;
- rAdm=function(){ADMIN();if(isMaster()&&at==='Отряды')document.querySelectorAll('#adm [data-q]').forEach(function(card){var q=D.squads.find(function(s){return String(s.id)===String(card.getAttribute('data-q'))});if(!ok(q))return;if(!card.querySelector('[data-ds-open]'))card.insertAdjacentHTML('beforeend','<div class="ds-actions"><button data-ds-open="'+e(card.getAttribute('data-q'))+'">Статистика и состав отряда</button></div>')})};
- document.getElementById('adm').addEventListener('click',function(ev){var el=ev.target.closest('[data-ds-open]');if(!el||!isMaster())return;selected=el.getAttribute('data-ds-open');var s=squad();if(s)D.me=s.id;memberIndex=null;sub='Обзор';location.hash='#state'});
  var dialog=document.createElement('dialog');dialog.className='ds-dialog';dialog.setAttribute('aria-labelledby','ds-edit-title');document.body.append(dialog);
  function field(label,path,type,options,required,min,max){
   var v=get(editor.entity,path),control;
@@ -222,6 +220,6 @@
   if(action.indexOf('edit-')===0||action.indexOf('add-')===0)openEdit(action.replace(/^(edit|add)-/,''),i);
  });
  window.addEventListener('ll:auth-state',function(ev){var state=ev.detail||{},role=state.profile&&state.profile.role;if(role!=='master'&&role!=='owner'){if(dialog.open)dialog.close();if(confirmDialog.open)confirmDialog.close()}});
- window.LLSquadDossier={render:render,roster:roster,squad:squad};
+ window.LLSquadDossier={render:render,roster:roster,squad:squad,select:function(id){selected=id;D.me=id;memberIndex=null}};
  if(location.hash==='#state')render();
 }());
