@@ -4,6 +4,43 @@
   var allowed = new Set(["P", "BR", "STRONG", "B", "EM", "I", "U", "S", "STRIKE", "H2", "H3", "BLOCKQUOTE", "UL", "OL", "LI", "A", "IMG", "HR", "TABLE", "COLGROUP", "COL", "TBODY", "TR", "TD", "TH", "VIDEO", "AUDIO", "DIV"]);
   var activeSave = null, draftField = null, selection = null;
   var pendingUploads = 0, mediaCache = new Map(), mediaUser = null;
+  var expenseKinds = [["food","Еда","порций"],["water","Вода","ед."],["mats","Материалы","ед."],["ammo","Патроны","шт."],["meds","Медикаменты","компл."],["fuel","Топливо","л"],["equipment","Снаряжение","ед."]];
+  function expenses(value) {
+    if (!value || typeof value !== "object") return null;
+    var result = { items: {}, other: "", none: value.none === true };
+    if (result.none) return result;
+    expenseKinds.forEach(function (kind) {
+      var raw = value.items && value.items[kind[0]], amount = typeof raw === "number" ? raw : NaN;
+      if (Number.isFinite(amount) && amount > 0 && amount <= 1000000000) result.items[kind[0]] = amount;
+    });
+    result.other = typeof value.other === "string" ? value.other.trim().slice(0, 1500) : "";
+    return result;
+  }
+  function hasExpenses(value) { return value && (value.none || Object.keys(value.items).length || value.other); }
+  function readExpenses() {
+    var form = document.getElementById("order-expenses");
+    if (!form) return null;
+    var value = { items: {}, other: form.querySelector("textarea").value, none: form.querySelector("[data-expense-none]").checked };
+    expenseKinds.forEach(function (kind) { value.items[kind[0]] = form.querySelector('[data-expense="'+kind[0]+'"]').valueAsNumber; });
+    return expenses(value);
+  }
+  function expenseForm(value) {
+    value = expenses(value) || { items: {}, other: "", none: false };
+    return '<section id="order-expenses" aria-labelledby="order-expenses-title"><div class="order-expenses-heading"><div><small>СВОДКА ДЛЯ МАСТЕРА</small><h3 id="order-expenses-title">Итоговые расходы</h3></div><label class="order-expenses-none"><input type="checkbox" data-expense-none'+(value.none?' checked':'')+'>Расходов не было</label></div><p class="order-expenses-help">Укажите все затраты за этот ход. Сводка сохраняется с приказом; списание со склада выполняется отдельно.</p><div class="order-expenses-fields"><div class="order-expenses-grid">'+expenseKinds.map(function(kind){return '<label>'+kind[1]+'<span><input type="number" data-expense="'+kind[0]+'" min="0" max="1000000000" step="any" inputmode="decimal" placeholder="0" value="'+(value.items[kind[0]] || '')+'"><small>'+kind[2]+'</small></span></label>';}).join('')+'</div><label class="order-expenses-other">Другие расходы и пояснения<textarea maxlength="1500" placeholder="Например: 2 батарейки, ремонт машины — 3 детали">'+esc(value.other)+'</textarea></label></div></section>';
+  }
+  function expenseSummary(value) {
+    if (!hasExpenses(value)) return "";
+    var section = document.createElement("section"), heading = document.createElement("h3");
+    section.className = "order-expenses-summary"; heading.textContent = "Итоговые расходы"; section.append(heading);
+    if (value.none) { var none = document.createElement("p"); none.textContent = "Расходов не было."; section.append(none); }
+    else {
+      var list = document.createElement("dl"); list.className = "order-expenses-grid";
+      expenseKinds.forEach(function(kind){if(!value.items[kind[0]])return;var row=document.createElement("div"),name=document.createElement("dt"),amount=document.createElement("dd");name.textContent=kind[1];amount.textContent=value.items[kind[0]].toLocaleString("ru-RU")+' '+kind[2];row.append(name,amount);list.append(row);});
+      if (list.children.length) section.append(list);
+      if (value.other) { var other=document.createElement("p"); other.className="order-expenses-note"; other.textContent=value.other; section.append(other); }
+    }
+    return section.outerHTML;
+  }
 
   function hydrateMedia(root) {
     root.querySelectorAll("[data-order-media]").forEach(function (element) {
@@ -102,7 +139,7 @@
     try {
       var article = JSON.parse(text.slice(prefix.length));
       if (typeof article.title !== "string" || typeof article.html !== "string") return null;
-      return { title: article.title.slice(0, 160), html: clean(article.html) };
+      return { title: article.title.slice(0, 160), html: clean(article.html), expenses: expenses(article.expenses) };
     } catch (error) { return null; }
   }
   function plainHtml(text) {
@@ -134,6 +171,8 @@
       toc.appendChild(list); node.appendChild(toc);
     }
     node.appendChild(body);
+    var costs = expenseSummary(article.expenses);
+    if (costs) node.insertAdjacentHTML("beforeend", costs);
     return node.outerHTML;
   }
   document.addEventListener("click", function (event) {
@@ -201,7 +240,8 @@
   function articleValue() {
     return prefix + JSON.stringify({
       title: document.getElementById("order-writing-title").value.trim(),
-      html: clean(document.getElementById("order-writing-body").innerHTML)
+      html: clean(document.getElementById("order-writing-body").innerHTML),
+      expenses: readExpenses()
     });
   }
   function saveDraft() {
@@ -209,7 +249,7 @@
     var value = articleValue();
     var title = document.getElementById("order-writing-title").value.trim();
     var body = document.getElementById("order-writing-body");
-    draftField.value = title || body.textContent.trim() || body.querySelector("img,video,audio") ? value : "";
+    draftField.value = title || body.textContent.trim() || body.querySelector("img,video,audio") || hasExpenses(readExpenses()) ? value : "";
     draftField.dispatchEvent(new Event("input", { bubbles: true }));
     var note = document.getElementById("order-writing-note");
     var status = draftField.dataset.wallDraftStatus && document.getElementById(draftField.dataset.wallDraftStatus);
@@ -234,11 +274,17 @@
       inserts.map(function (tool) { return '<button type="button" data-order-tool="'+tool[0]+'">'+tool[1]+'</button>'; }).join("") +
       '</div><input type="file" id="order-media-picker" hidden><div class="order-writing-paper"><label class="order-title-label">Заголовок приказа<input id="order-writing-title" maxlength="160" placeholder="Название операции"></label>' +
       '<div id="order-writing-body" class="order-article-body" contenteditable="true" role="textbox" aria-label="Текст приказа" aria-multiline="true"></div>' +
+      (!verdictMode && !field.dataset.publicRules ? expenseForm(article.expenses) : "") +
       '</div><div class="order-writing-bottom"><span id="order-writing-note" role="status">Черновик хранится 12 часов после последнего изменения.</span>' +
       (verdictMode ? '<label>Решение<select id="verdict-decision"><option value="Принято">Принять</option><option value="Отклонено">Отклонить</option></select></label>' : "") +
       '<button type="button" class="pr" data-order-submit>'+(verdictMode?"Опубликовать вердикт":editing?"Сохранить изменения":"Отправить приказ")+'</button></div>';
     var title = document.getElementById("order-writing-title"), body = document.getElementById("order-writing-body");
     title.value = article.title || (verdictMode ? "Вердикт мастера" : ""); body.innerHTML = article.html || "<p><br></p>";
+    var expenseSection = dialog.querySelector("#order-expenses");
+    if (expenseSection) {
+      var toggleExpenses = function () { var none = expenseSection.querySelector("[data-expense-none]").checked; expenseSection.querySelectorAll(".order-expenses-fields input,.order-expenses-fields textarea").forEach(function(input){input.disabled=none;}); expenseSection.classList.toggle("no-expenses",none); };
+      expenseSection.querySelector("[data-expense-none]").onchange = toggleExpenses; toggleExpenses();
+    }
     dialog.oninput = saveDraft;
     dialog.onscroll = function () { dialog.querySelector(".order-insert-menu").hidden = true; positionTools(); };
     if (window.LLOrderTables) window.LLOrderTables.install(dialog, body, saveDraft);
@@ -332,6 +378,11 @@
         rememberSelection(); saveDraft(); return;
       }
       if (button.hasAttribute("data-order-submit")) {
+        if (expenseSection) {
+          var invalid = Array.from(expenseSection.querySelectorAll("input[type=number]")).find(function(input){return !input.disabled && !input.checkValidity();});
+          if (invalid) { invalid.reportValidity(); invalid.focus(); return; }
+          if (!hasExpenses(readExpenses())) { toast('Укажите итоговые расходы или отметьте «Расходов не было».',"error"); expenseSection.querySelector("input").focus(); return; }
+        }
         var value = articleValue();
         if (!title.value.trim() || (!body.textContent.trim() && !body.querySelector("img,video,audio"))) {
           toast("Укажите заголовок и содержание приказа.", "error"); return;
