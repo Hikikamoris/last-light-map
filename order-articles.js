@@ -1,7 +1,7 @@
 (function () {
   "use strict";
   var prefix = "LLARTICLE1\n";
-  var allowed = new Set(["P", "BR", "STRONG", "B", "EM", "I", "U", "S", "STRIKE", "H2", "H3", "BLOCKQUOTE", "UL", "OL", "LI", "A", "IMG", "HR", "TABLE", "COLGROUP", "COL", "TBODY", "TR", "TD", "TH", "VIDEO", "AUDIO", "DIV"]);
+  var allowed = new Set(["P", "SPAN", "BR", "STRONG", "B", "EM", "I", "U", "S", "STRIKE", "H2", "H3", "BLOCKQUOTE", "UL", "OL", "LI", "A", "IMG", "HR", "TABLE", "COLGROUP", "COL", "TBODY", "TR", "TD", "TH", "VIDEO", "AUDIO", "DIV"]);
   var activeSave = null, draftField = null, selection = null;
   var pendingUploads = 0, mediaCache = new Map(), mediaUser = null;
 
@@ -56,6 +56,7 @@
       if (node.nodeType === 3) { parent.appendChild(document.createTextNode(node.textContent)); return; }
       if (node.nodeType !== 1 || ["SCRIPT", "STYLE", "IFRAME", "OBJECT"].includes(node.tagName)) return;
       if (!allowed.has(node.tagName)) { Array.from(node.childNodes).forEach(function (child) { append(child, parent); }); return; }
+      if (node.tagName === "SPAN" && node.hasAttribute("data-order-character") && window.LLOrderReference) { var character = LLOrderReference.unpack(node.dataset.orderCharacter); if(character){parent.appendChild(LLOrderReference.token(character));return;} }
       var element = document.createElement(node.tagName.toLowerCase());
       if (["TD", "TH"].includes(node.tagName)) {
         if (/^#[0-9a-f]{6}$/i.test(node.dataset.cellColor || "")) {
@@ -345,6 +346,7 @@
       }
     };
     dialog.showModal(); title.focus(); hydrateMedia(body);
+    if(window.LLOrderReference && !verdictMode && !field.dataset.publicRules) LLOrderReference.install(dialog,body,saveDraft,field);
   }
   function mount(card) {
     var field = card.querySelector("#wt"), publish = card.querySelector("#wp");
