@@ -345,7 +345,6 @@
       }
     };
     dialog.showModal(); title.focus(); hydrateMedia(body);
-    if(window.LLOrderReference && !verdictMode && !field.dataset.publicRules) LLOrderReference.install(dialog,field);
   }
   function mount(card) {
     var field = card.querySelector("#wt"), publish = card.querySelector("#wp");
